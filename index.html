@@ -1,1 +1,65 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1.0"/><title>Roadster | Thruster Recovery Lab</title></head><body><div id="app"></div><script type="module" src="/src/main.js"></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Roadster | Thruster Recovery Lab</title>
+  </head>
+  <body>
+    <div id="app">
+      <div id="viewport"></div>
+      <aside class="hud">
+        <h1>ROADSTER // VECTOR LAB</h1>
+        <div class="subtitle">RAMPA CURVA · 4 PROPULSORES · RECUPERAÇÃO</div>
+
+        <div class="stats">
+          <div class="stat"><small>ALTITUDE</small><b id="alt">0 m</b></div>
+          <div class="stat"><small>ATITUDE</small><b id="att">0°</b></div>
+          <div class="stat">
+            <small>VEL. VERTICAL</small><b id="speed">0 m/s</b>
+          </div>
+        </div>
+
+        <div class="status" id="status">Pronto para percorrer a rampa.</div>
+        <div class="controls">
+          <button class="primary" id="launch">ACELERAR NA RAMPA</button>
+          <button id="reset">REINICIAR</button>
+          <button id="auto">ESTABILIZAÇÃO: OFF</button>
+          <button id="camera">CÂMERA: SEGUIR</button>
+        </div>
+
+        <div class="section">
+          <strong>Potência dos quatro propulsores</strong>
+          <span id="percent" class="tag">50%</span>
+          <div class="bar"><span id="powerbar"></span></div>
+          <div class="row">
+            <span>Potência</span>
+            <input id="throttle" type="range" min="0" max="100" value="50" />
+            <span id="throttleValue">50%</span>
+          </div>
+        </div>
+
+        <div class="section">
+          <strong>Comandos</strong>
+          <div class="hint">
+            <strong>W / S</strong> inclinar nariz · <strong>A / D</strong> rolar
+            · <strong>Q / E</strong> guinar<br />
+            <strong>↑ / ↓</strong> vetorizar para frente/trás ·
+            <strong>← / →</strong> vetorizar lateralmente<br />
+            <strong>Shift</strong> impulso máximo ·
+            <strong>T</strong> estabilização automática ·
+            <strong>R</strong> reiniciar<br />
+            <strong>Mouse</strong> orbitar/zoom. O carro percorre a rampa curva
+            fixa e sai invertido no topo.
+          </div>
+        </div>
+        <div class="section warning">
+          Modelo Roadster estilizado. Simulação de voo recreativa, sem
+          representar um sistema real de propulsão.
+        </div>
+      </aside>
+      <div class="bottom">THREE.JS · RAMPA PROCEDURAL · PROPULSÃO VETORIAL</div>
+    </div>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
