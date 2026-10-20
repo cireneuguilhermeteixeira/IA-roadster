@@ -1,24 +1,24 @@
 import * as THREE from "three";
+import RAPIER from "@dimforge/rapier3d-compat";
 import { createVisuals } from "./visuals";
+import { VehiclePhysics, FIXED_DT } from "./physics";
+import { FlightController } from "./controller";
 import "./style.css";
 
-// Forces and torques are deliberately simplified for arcade flight.
+const view = createVisuals(document.querySelector<HTMLElement>("#viewport")!);
 const {
   scene,
   camera,
   renderer,
   orbit,
+  vehicle,
+  thrusters,
   trackAt,
   trackLength,
+  rampSurface,
   landingX,
   landingZ,
-  rampLandingHeight,
-  landingSurfaceAt,
-  vehicle,
-  body,
-  thrusters,
-} = createVisuals(document.querySelector<HTMLElement>("#viewport")!);
-
+} = view;
 const ui = {
   alt: document.querySelector<HTMLElement>("#alt")!,
   att: document.querySelector<HTMLElement>("#att")!,
@@ -31,338 +31,118 @@ const ui = {
   auto: document.querySelector<HTMLElement>("#auto")!,
   camera: document.querySelector<HTMLElement>("#camera")!,
 };
-let mode = "ready",
-  trackDistance = 0,
-  auto = false,
-  follow = true,
-  throttle = 0.5;
 const keys: Record<string, boolean> = {};
-const pos = new THREE.Vector3(),
-  vel = new THREE.Vector3(),
-  omega = new THREE.Vector3(),
-  quat = new THREE.Quaternion();
-const UP = new THREE.Vector3(0, 1, 0);
-const FORWARD_AWAY_FROM_RAMP = new THREE.Vector3(-1, 0, 0);
-const TARGET_UPRIGHT = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
-const inertia = new THREE.Vector3(3.4, 6, 4.7);
-function placeOnTrack(distance: number) {
-  const { point, angle } = trackAt(distance);
-  pos
-    .copy(point)
-    .add(
-      new THREE.Vector3(-Math.sin(angle), Math.cos(angle), 0).multiplyScalar(
-        0.33,
-      ),
-    );
-  quat.setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle);
-  vehicle.position.copy(pos);
-  vehicle.quaternion.copy(quat);
-  return angle;
-}
+const controller = new FlightController();
+let physics: VehiclePhysics;
+let mode: "ready" | "ramp" | "flight" = "ready";
+let auto = true,
+  follow = true,
+  throttle = 1;
+const landing = new THREE.Vector3(landingX, 0, landingZ);
+const reactorsEnabled = new URLSearchParams(location.search).get("reactors") !== "off";
+const reactorNote = reactorsEnabled ? "" : " Reatores 100% desligados (teste).";
 function reset() {
+  physics.reset();
   mode = "ready";
-  trackDistance = 0;
-  placeOnTrack(0);
-  vel.set(0, 0, 0);
-  omega.set(0, 0, 0);
-  body.position.set(0, 0, 0);
-  throttle = 0.5;
-  ui.throttle.value = 50;
-  auto = false;
-  ui.auto.textContent = "ESTABILIZAÇÃO: OFF";
-  ui.status.textContent = "Pronto para percorrer a rampa.";
-  ui.status.style.color = "#9bdcff";
-  camera.position.set(52, 31, 47);
-  orbit.target.set(0, 23, 0);
-  for (const t of thrusters) {
-    t.power = 0;
-    t.yaw.rotation.set(0, 0, 0);
-    t.tilt.rotation.set(0, 0, 0);
-    t.exhaust.visible = false;
-    t.light.intensity = 0;
-  }
-}
-function toggleAuto() {
-  auto = !auto;
+  auto = reactorsEnabled;
+  throttle = reactorsEnabled ? 1 : 0;
   ui.auto.textContent = `ESTABILIZAÇÃO: ${auto ? "ON" : "OFF"}`;
-  if (mode === "flight")
-    ui.status.textContent = auto
-      ? "Estabilização ativa: corrigindo atitude e descendo para a marca."
-      : "Estabilização desligada: controle manual.";
+  ui.throttle.value = reactorsEnabled ? "100" : "0";
+  ui.throttle.disabled = !reactorsEnabled;
+  ui.status.textContent = "Pronto para acelerar na rampa." + reactorNote;
+  const pos = physics.snapshot().position;
+  orbit.target.copy(pos);
+  camera.position.copy(pos).add(new THREE.Vector3(12, 7, 12));
 }
 function launch() {
-  if (mode !== "ready") reset();
+  physics.reset();
   mode = "ramp";
-  trackDistance = 0;
-  ui.status.textContent = "Percorrendo a rampa curva…";
+  ui.status.textContent = "Acelerando na rampa..." + reactorNote;
 }
 document.querySelector<HTMLElement>("#launch")!.onclick = launch;
 document.querySelector<HTMLElement>("#reset")!.onclick = reset;
-ui.auto.onclick = toggleAuto;
+ui.auto.onclick = () => {
+  auto = !auto;
+  ui.auto.textContent = `ESTABILIZAÇÃO: ${auto ? "ON" : "OFF"}`;
+};
 ui.camera.onclick = () => {
   follow = !follow;
   ui.camera.textContent = `CÂMERA: ${follow ? "SEGUIR" : "LIVRE"}`;
 };
-ui.throttle.oninput = () => (throttle = Number(ui.throttle.value) / 100);
-const prevent = new Set([
-  "Space",
-  "ArrowUp",
-  "ArrowDown",
-  "ArrowLeft",
-  "ArrowRight",
-]);
-addEventListener("keydown", (e: KeyboardEvent) => {
-  if (prevent.has(e.code)) e.preventDefault();
-  keys[e.code] = true;
-  if (e.repeat) return;
-  if (e.code === "KeyT") toggleAuto();
-  if (e.code === "KeyR") reset();
-  if (e.code === "Enter") launch();
+ui.throttle.oninput = () => {
+  throttle = Number(ui.throttle.value) / 100;
+  if (mode === "flight" && !physics.grounded) {
+    ui.status.textContent =
+      throttle === 0
+        ? "Queda livre: reatores desligados."
+        : "Reatores ativos. Controle a descida e a direção.";
+  }
+};
+const prevent = new Set(["Space", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+addEventListener("keydown", (event: KeyboardEvent) => {
+  if (prevent.has(event.code)) event.preventDefault();
+  keys[event.code] = true;
+  if (event.repeat) return;
+  if (event.code === "KeyT") ui.auto.click();
+  if (event.code === "KeyR") reset();
+  if (event.code === "Enter") launch();
 });
-addEventListener("keyup", (e: KeyboardEvent) => {
-  keys[e.code] = false;
-});
-addEventListener("blur", () => {
-  for (const k in keys) keys[k] = false;
-});
-function axis(positive: string, negative: string) {
-  return Number(!!keys[positive]) - Number(!!keys[negative]);
-}
-const worldAcceleration = new THREE.Vector3();
-
-function desiredTorques() {
-  // Manual input requests torque around the car's local axes.
-  const command = {
-    x: axis("KeyA", "KeyD") * 13,
-    y: axis("KeyQ", "KeyE") * 9,
-    z: axis("KeyW", "KeyS") * 15,
-  };
-  if (!auto) return command;
-
-  // Roll around the car's front-to-back axis to keep its nose away from the ramp.
-  // The target is upright with 180° yaw, rather than the starting orientation.
-  const error = quat.clone().invert().multiply(TARGET_UPRIGHT);
-  if (error.w < 0) error.set(-error.x, -error.y, -error.z, -error.w);
-  const angle = 2 * Math.acos(THREE.MathUtils.clamp(error.w, -1, 1));
-  const sinHalf = Math.sqrt(Math.max(1 - error.w * error.w, 0));
-  const errorAxis =
-    sinHalf > 0.0001
-      ? new THREE.Vector3(error.x, error.y, error.z).divideScalar(sinHalf)
-      : new THREE.Vector3(1, 0, 0);
-  const localOmega = omega.clone().applyQuaternion(quat.clone().invert());
-  command.x += THREE.MathUtils.clamp(
-    errorAxis.x * angle * 17 - localOmega.x * 9,
-    -32,
-    32,
-  );
-  command.y += THREE.MathUtils.clamp(
-    errorAxis.y * angle * 12 - localOmega.y * 7,
-    -20,
-    20,
-  );
-  command.z += THREE.MathUtils.clamp(
-    errorAxis.z * angle * 18 - localOmega.z * 10,
-    -36,
-    36,
-  );
-  return command;
-}
-
-function automaticThrust() {
-  const upAlignment = new THREE.Vector3(0, 1, 0).applyQuaternion(quat).y;
-  if (upAlignment <= 0.35) return { base: 0, tiltX: 0, tiltZ: 0 };
-
-  // Request a 3D acceleration: vertical descent plus lateral position hold.
-  const targetVy =
-    pos.y > 12
-      ? -5
-      : -Math.max(
-          1.5,
-          Math.sqrt(Math.max(pos.y - rampLandingHeight, 0)) * 1.35,
-        );
-  const desiredAy = THREE.MathUtils.clamp((targetVy - vel.y) * 2.8, -9, 30);
-  const desiredThrust = new THREE.Vector3(
-    THREE.MathUtils.clamp((landingX - pos.x) * 5 - vel.x * 5, -20, 20),
-    9.81 + desiredAy,
-    THREE.MathUtils.clamp((landingZ - pos.z) * 5 - vel.z * 5, -20, 20),
-  );
-  // The nozzles cannot ask for arbitrary side force while producing little lift.
-  const maxSideThrust = desiredThrust.y * Math.tan(0.6);
-  const sideThrust = Math.hypot(desiredThrust.x, desiredThrust.z);
-  if (sideThrust > maxSideThrust) {
-    const scale = maxSideThrust / sideThrust;
-    desiredThrust.x *= scale;
-    desiredThrust.z *= scale;
-  }
-  const localThrust = desiredThrust
-    .clone()
-    .applyQuaternion(quat.clone().invert());
-  const tiltZ = THREE.MathUtils.clamp(
-    -Math.atan2(localThrust.x, localThrust.y),
-    -0.7,
-    0.7,
-  );
-  const tiltX = THREE.MathUtils.clamp(
-    Math.atan2(localThrust.z, Math.hypot(localThrust.x, localThrust.y)),
-    -0.7,
-    0.7,
-  );
-  const actualDirection = new THREE.Vector3(0, 1, 0)
-    .applyEuler(new THREE.Euler(tiltX, 0, tiltZ))
-    .applyQuaternion(quat);
-  return {
-    base:
-      actualDirection.y > 0.1
-        ? THREE.MathUtils.clamp(
-            desiredThrust.y / (96 * actualDirection.y),
-            0,
-            0.65,
-          )
-        : 0,
-    tiltZ,
-    tiltX,
-  };
-}
-
-function simulate(dt: number) {
-  if (mode === "ready") return;
-  if (mode === "ramp") {
-    const previousY = pos.y;
-    trackDistance = Math.min(trackDistance + dt * 23, trackLength);
-    const angle = placeOnTrack(trackDistance);
-    vel.set(23 * Math.cos(angle), (pos.y - previousY) / dt, 0);
-    if (trackDistance >= trackLength) {
-      mode = "flight";
-      vel.set(0, 0, 0);
-      omega.set(0, 0, 0);
-      ui.status.textContent = auto
-        ? "SAÍDA INVERTIDA! Estabilização ativa; descendo para a marca."
-        : "SAÍDA INVERTIDA! Ative T para estabilizar e pousar na marca.";
-    }
-    return;
-  }
-  if (mode === "landed") return;
-  const torqueCommand = desiredTorques();
-  const totalAcceleration = new THREE.Vector3(0, -9.81, 0),
-    torqueLocal = new THREE.Vector3();
-  const xarm = 1.8,
-    zarm = 1.08;
-  const autoThrust = auto ? automaticThrust() : null;
-  const base =
-    keys.ShiftLeft || keys.ShiftRight ? 1 : auto ? autoThrust.base : throttle;
-  const strafe = axis("ArrowRight", "ArrowLeft") * 0.55;
-  const forward = axis("ArrowUp", "ArrowDown") * 0.55;
-  for (const t of thrusters) {
-    // Differential upward thrust creates roll/pitch torque; limit for saturation.
-    const power = THREE.MathUtils.clamp(
-      base +
-        (torqueCommand.x * -t.z) / (4 * zarm * zarm * 24) +
-        (torqueCommand.z * t.x) / (4 * xarm * xarm * 24),
-      0,
-      1,
-    );
-    t.power = power;
-    // Gimbal axes: tilt.z controls lateral nozzle tilt, tilt.x longitudinal.
-    const targetZ = THREE.MathUtils.clamp(
-      (autoThrust?.tiltZ ?? 0) - strafe + torqueCommand.y * t.x * 0.018,
-      -0.7,
-      0.7,
-    );
-    const targetX = THREE.MathUtils.clamp(
-      (autoThrust?.tiltX ?? 0) + forward + torqueCommand.y * t.z * 0.018,
-      -0.7,
-      0.7,
-    );
-    t.tilt.rotation.z = THREE.MathUtils.damp(t.tilt.rotation.z, targetZ, 7, dt);
-    t.tilt.rotation.x = THREE.MathUtils.damp(t.tilt.rotation.x, targetX, 7, dt);
-    const reaction = new THREE.Vector3(0, 1, 0)
-      .applyEuler(t.tilt.rotation)
-      .multiplyScalar(power * 24); // acceleration
-    worldAcceleration.copy(reaction).applyQuaternion(quat);
-    totalAcceleration.add(worldAcceleration);
-    torqueLocal.add(new THREE.Vector3(t.x, -0.1, t.z).cross(reaction));
-    t.exhaust.visible = power > 0.025;
-    t.exhaust.scale.y = 0.38 + power * 1.7;
-    t.light.intensity = power * 5;
-  }
-  // Angular acceleration in local body principal axes; simple damping.
-  const bodyOmega = omega.clone().applyQuaternion(quat.clone().invert());
-  const alpha = new THREE.Vector3(
-    torqueLocal.x / inertia.x,
-    torqueLocal.y / inertia.y,
-    torqueLocal.z / inertia.z,
-  ).addScaledVector(bodyOmega, -2.1);
-  omega.addScaledVector(alpha.applyQuaternion(quat), dt);
-  omega.clampLength(0, 5.7);
-  const speed = omega.length();
-  if (speed > 1e-7) {
-    const dq = new THREE.Quaternion().setFromAxisAngle(
-      omega.clone().normalize(),
-      speed * dt,
-    );
-    quat.premultiply(dq).normalize();
-  }
-  vel.addScaledVector(totalAcceleration, dt);
-  vel.multiplyScalar(Math.exp(-0.045 * dt));
-  pos.addScaledVector(vel, dt);
-  const landingHeight = landingSurfaceAt(pos.x, pos.z);
-  if (vel.y <= 0 && pos.y <= landingHeight) {
-    pos.y = landingHeight;
-    mode = "landed";
-    vel.set(0, 0, 0);
-    omega.set(0, 0, 0);
-    const upright =
-      new THREE.Vector3(0, 1, 0).applyQuaternion(quat).dot(UP) > 0.72;
-    const facingAway =
-      FORWARD_AWAY_FROM_RAMP.dot(
-        new THREE.Vector3(1, 0, 0).applyQuaternion(quat),
-      ) > 0.72;
-    const landingError = Math.hypot(pos.x - landingX, pos.z - landingZ);
-    const safeLanding =
-      landingHeight === rampLandingHeight &&
-      upright &&
-      facingAway &&
-      landingError < 3.1;
-    ui.status.textContent = safeLanding
-      ? `POUSO NA RAMPA! ${landingError.toFixed(1)} m da marca, frente para fora.`
-      : "IMPACTO! Corrija a atitude e procure a marca na rampa.";
-    ui.status.style.color = safeLanding ? "#87f5bb" : "#ff9e9e";
-  }
-  vehicle.position.copy(pos);
-  vehicle.quaternion.copy(quat);
-}
-reset();
+addEventListener("keyup", (event: KeyboardEvent) => (keys[event.code] = false));
+addEventListener("blur", () => Object.keys(keys).forEach((key) => (keys[key] = false)));
 const clock = new THREE.Clock();
 let accumulator = 0;
-const FIXED = 1 / 120;
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
   accumulator += dt;
-  while (accumulator >= FIXED) {
-    simulate(FIXED);
-    accumulator -= FIXED;
+  while (accumulator >= FIXED_DT) {
+    if (mode !== "ready") {
+      const controls =
+        mode === "flight"
+          ? controller.command(physics.snapshot(), keys, auto, throttle, landing)
+          : undefined;
+      physics.step(FIXED_DT, controls);
+      if (mode === "ramp" && physics.flying) {
+        mode = "flight";
+        ui.status.textContent = reactorsEnabled
+          ? "LIBERADO! Controle os propulsores para estabilizar."
+          : "LIBERADO! Queda balística com os reatores desligados.";
+      }
+      if (mode === "flight" && physics.grounded) ui.status.textContent = "Carro no solo.";
+    }
+    accumulator -= FIXED_DT;
   }
-  const currentUp = new THREE.Vector3(0, 1, 0).applyQuaternion(quat),
-    tilt =
-      (Math.acos(THREE.MathUtils.clamp(currentUp.dot(UP), -1, 1)) * 180) /
-      Math.PI;
-  ui.alt.textContent = `${Math.max(0, pos.y - 0.67).toFixed(1)} m`;
-  ui.att.textContent = `${tilt.toFixed(0)}°`;
-  ui.speed.textContent = `${vel.y.toFixed(1)} m/s`;
-  ui.status.dataset.position = `${pos.x.toFixed(2)},${pos.z.toFixed(2)}`;
+  const state = physics.snapshot();
+  vehicle.position.copy(state.position);
+  vehicle.quaternion.copy(state.rotation);
+  const inclination = THREE.MathUtils.radToDeg(
+    Math.acos(
+      THREE.MathUtils.clamp(new THREE.Vector3(0, 1, 0).applyQuaternion(state.rotation).y, -1, 1),
+    ),
+  );
+  ui.alt.textContent = `${Math.max(0, state.position.y).toFixed(1)} m`;
+  ui.att.textContent = `${inclination.toFixed(0)}°`;
+  ui.speed.textContent = `${state.velocity.y.toFixed(1)} m/s`;
   ui.percent.textContent = `${Math.round(throttle * 100)}%`;
-  ui.throttleValue.textContent = `${Math.round(throttle * 100)}%`;
-  ui.power.style.width = `${Math.round(throttle * 100)}%`;
-  if (follow && mode === "flight") {
-    const desired = new THREE.Vector3(13, 8, 19).add(pos);
-    camera.position.lerp(desired, Math.min(1, 2.1 * dt));
-    orbit.target.lerp(pos, Math.min(1, 3 * dt));
+  ui.throttleValue.textContent = ui.percent.textContent;
+  ui.power.style.width = ui.percent.textContent;
+  if (follow) {
+    const shift = state.position.clone().sub(orbit.target);
+    camera.position.add(shift);
+    orbit.target.copy(state.position);
   }
   orbit.update();
   renderer.render(scene, camera);
 }
-frame();
+(async () => {
+  await RAPIER.init();
+  physics = new VehiclePhysics(rampSurface, trackAt, trackLength, thrusters, reactorsEnabled);
+  reset();
+  frame();
+})().catch((error) => {
+  console.error(error);
+  ui.status.textContent = "Erro inicializando a física: " + error;
+});
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();

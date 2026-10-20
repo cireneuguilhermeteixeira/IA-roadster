@@ -1,28 +1,15 @@
-export default [
+import eslint from "@eslint/js";
+import tseslint from "typescript-eslint";
+
+export default tseslint.config(
+  { ignores: ["dist/**", "node_modules/**", "public/**"] },
+  eslint.configs.recommended,
+  ...tseslint.configs.recommended,
   {
-    ignores: ["dist/**"],
-  },
-  {
-    files: ["src/**/*.js", "eslint.config.js"],
-    languageOptions: {
-      ecmaVersion: "latest",
-      sourceType: "module",
-      globals: {
-        document: "readonly",
-        window: "readonly",
-        innerWidth: "readonly",
-        innerHeight: "readonly",
-        devicePixelRatio: "readonly",
-        addEventListener: "readonly",
-        requestAnimationFrame: "readonly",
-      },
-    },
+    files: ["src/**/*.{ts,tsx}"],
     rules: {
-      eqeqeq: ["error", "always"],
-      "no-constant-condition": "error",
-      "no-undef": "error",
-      "no-unused-vars": "error",
-      "prefer-const": "error",
+      "@typescript-eslint/no-explicit-any": "warn",
+      "@typescript-eslint/no-unused-vars": ["warn", { argsIgnorePattern: "^_" }],
     },
   },
-];
+);

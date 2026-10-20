@@ -1,32 +1,31 @@
-# VectorMind — TypeScript + Vite + Three.js
+# VectorMind
 
-Migrated from the original IA-roadster JavaScript prototype, preserving the half-loop ramp, free-fall, four independently vectored thrusters, controls and automatic attitude stabilization.
+Three.js + Vite + TypeScript + Rapier WASM.
 
 ## Development
 
 ```bash
 npm install
-npm run dev
 npm run typecheck
-npm run build
+npm run dev
 ```
 
-## Subaru body
+## Simulation
 
-The app loads `public/models/2002_subaru_impreza_wrx_sti_extreme.glb` via `GLTFLoader` and uses the procedural fallback when the asset is unavailable. The Subaru GLB is included in the repository and loaded automatically. Its original creator/license must still be credited and redistribution rights verified.
+Rapier is the single authority for gravity, rigid-body movement, torque, inertia and collision. The Subaru is always a **dynamic** rigid body. The ramp is represented by the same triangular surface as the visible track. A magnetic guide acts perpendicular to the road to maintain contact; a separate motor drives the car along the road at about 18 m/s. The guide stops at the upper exit, where the thrusters become available.
 
-### Controls
+Four independent jets apply world-space forces at axle points, creating torque through `RigidBody.addForceAtPoint`. Their power and nozzle angles change gradually; each jet has a maximum force of 6000 N. Near the exit, the track motor brakes the car. In automatic mode, the nozzles turn toward the force needed to cancel horizontal speed and descend onto the landing marker. The uploaded jetpack GLB appears when the car leaves the loop. Mass and moments of inertia are prototype estimates.
 
-W/S pitch, A/D roll, Q/E yaw; arrow keys thrust vector; Shift full power; T auto stabilize; R reset; Enter launch.
+The chassis uses one rounded contact collider. The visible tires do not yet have moving suspension, independent wheel joints or tire-slip modelling. The guide is intentionally assisted because an inverted loop otherwise requires mechanically modeled adhesion. Motor, guide and reactor forces are cleared and recalculated on every physics step; after release, gravity and the reactors are the only active forces. Reactor force stops after ground contact.
 
-## Current physics limits
+The PID controller remains custom: physics engines calculate the response to forces, not the vehicle's flight objectives. The fixed-step simulation runs in real time when the renderer can keep up. No manual position or quaternion integration remains.
 
-The existing simulator implements simplified numerical flight dynamics rather than Rapier rigid-body simulation. The car follows a predefined half-loop path and then enters free fall. Vehicle geometry is purely visual; collision and auto-stabilization remain the original prototype behavior.
+## Controls
 
-## Credits
+W/S pitch, A/D roll, Q/E yaw; arrows vector thrust; T toggles autopilot (on by default); R reset; Enter launch. The power slider is a physical limit for each reactor, in manual and automatic modes: 10% allows at most 600 N from each 6000 N reactor, and 0% instantly stops all reactor force and attitude control. The default is 100% so the autopilot has enough thrust to brake and land; it still uses only the power it needs.
 
-Subaru model: attribution and license details must be added after obtaining the model from its creator. No third-party 3D mesh is included in this repository.
+Open the app with `?reactors=off` to test a ballistic flight with all four reactor forces held at zero. The throttle is disabled in this mode. The car still accelerates along the ramp and then falls under gravity.
 
-## Environment
+## Assets
 
-Small optimized 3D environment with fewer, larger foreground vegetation objects and a seamless 360° equirectangular sunset panorama (`public/textures/sunset-panorama.svg`) for distant mountains and sky. No geometry is used for distant mountains. The panorama is an original lightweight SVG image and can be replaced with an HDRI or PNG of 2:1 aspect ratio. The flight simulation and ramp dimensions are unchanged.
+The Subaru and four jetpack visuals are loaded from GLB files under `public/models`. See the upstream model's distribution license before reuse.
