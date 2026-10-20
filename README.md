@@ -29,4 +29,4 @@ Subaru model: attribution and license details must be added after obtaining the 
 
 ## Caatinga scene
 
-Procedural scenery inspired by interior Ceará, including carnaúba palms, mandacaru cacti, dry trees, sandy soil and rocks. The ramp radius, approach and inverted exit have been enlarged. The vegetation is decorative and has no colliders.
+Procedural scenery inspired by interior Ceará, including carnaúba palms, mandacaru cacti, dry trees, sandy soil and rocks. The ramp returns to its original dimensions and uses natural-colored materials. The vegetation is decorative and has no colliders.

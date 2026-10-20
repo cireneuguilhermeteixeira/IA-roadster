@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-/** Seeded, lightweight vegetation inspired by Ceará's semi-arid Caatinga biome.
+/** Seeded, lightweight vegetation for a semi-arid environment.
  * All objects are purely decorative and have no physical colliders.
  */
 export function createCaatinga(scene: THREE.Scene): void {
@@ -8,11 +8,11 @@ export function createCaatinga(scene: THREE.Scene): void {
   const random = () => ((seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296);
   const sandy = new THREE.MeshStandardMaterial({ color: 0xa87b52, roughness: 1 });
   const rock = new THREE.MeshStandardMaterial({ color: 0x796954, roughness: 0.98 });
-  const cactus = new THREE.MeshStandardMaterial({ color: 0x426d3c, roughness: 0.9 });
+  const cactus = new THREE.MeshStandardMaterial({ color: 0x3d7442, roughness: 0.9 });
   const trunk = new THREE.MeshStandardMaterial({ color: 0x735842, roughness: 1 });
-  const palms = new THREE.MeshStandardMaterial({ color: 0x758149, side: THREE.DoubleSide, roughness: 0.95 });
+  const palms = new THREE.MeshStandardMaterial({ color: 0x5b8b4d, side: THREE.DoubleSide, roughness: 0.95 });
   const branches = new THREE.MeshStandardMaterial({ color: 0x74644b, roughness: 1 });
-  const leaf = new THREE.MeshStandardMaterial({ color: 0x777c40, roughness: 1, side: THREE.DoubleSide });
+  const leaf = new THREE.MeshStandardMaterial({ color: 0x57804a, roughness: 1, side: THREE.DoubleSide });
 
   const cylinder = (parent: THREE.Object3D, radiusA: number, radiusB: number, height: number, material: THREE.Material, sides = 7) => {
     const mesh = new THREE.Mesh(new THREE.CylinderGeometry(radiusA, radiusB, height, sides), material);
@@ -27,7 +27,7 @@ export function createCaatinga(scene: THREE.Scene): void {
     mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction.normalize());
     return mesh;
   };
-  function mandacaru(height: number): THREE.Group {
+  function vegetation2(height: number): THREE.Group {
     const group = new THREE.Group();
     stalk(group, new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, height, 0), 0.17, cactus);
     for (const [i, side] of [-1, 1].entries()) {
@@ -38,7 +38,7 @@ export function createCaatinga(scene: THREE.Scene): void {
     }
     return group;
   }
-  function carnauba(height: number): THREE.Group {
+  function vegetation1(height: number): THREE.Group {
     const group = new THREE.Group();
     const top = new THREE.Vector3(0, height, 0);
     stalk(group, new THREE.Vector3(0, 0, 0), top, 0.13, trunk);
@@ -59,7 +59,7 @@ export function createCaatinga(scene: THREE.Scene): void {
     }
     return group;
   }
-  function dryTree(height: number): THREE.Group {
+  function vegetation3(height: number): THREE.Group {
     const group = new THREE.Group();
     const root = new THREE.Vector3();
     const crown = new THREE.Vector3(0, height * 0.7, 0);
@@ -79,18 +79,55 @@ export function createCaatinga(scene: THREE.Scene): void {
   }
   const terrainPatches = new THREE.Group();
   scene.add(terrainPatches);
-  for (let i = 0; i < 210; i++) {
-    const x = (random() - 0.5) * 510;
-    const z = (random() - 0.5) * 510;
+  for (let i = 0; i < 550; i++) {
+    const x = (random() - 0.5) * 260;
+    const z = (random() - 0.5) * 260;
     // Leave ample clearance around the ramp, landing zone, and approach.
-    if (Math.abs(z) < 19 && x > -95 && x < 40) continue;
+    if (Math.abs(z) < 8.5 && x > -42 && x < 35) continue;
     const choice = random();
-    const item = choice < 0.20 ? carnauba(5 + random() * 4) :
-      choice < 0.49 ? mandacaru(2 + random() * 2.8) : dryTree(2.4 + random() * 2.3);
+    const item = choice < 0.29 ? vegetation1(5 + random() * 4) :
+      choice < 0.57 ? vegetation2(2 + random() * 2.8) : vegetation3(2.4 + random() * 2.3);
     item.position.set(x, 0, z);
     item.rotation.y = random() * Math.PI * 2;
     item.scale.multiplyScalar(0.8 + random() * 0.5);
     terrainPatches.add(item);
+  }
+  // Distant irregular ridges: kept outside the flight area and behind atmospheric fog.
+  const mountainMaterials = [
+    new THREE.MeshStandardMaterial({ color: 0x78876d, roughness: 1, flatShading: true }),
+    new THREE.MeshStandardMaterial({ color: 0x8a8069, roughness: 1, flatShading: true }),
+    new THREE.MeshStandardMaterial({ color: 0x65755e, roughness: 1, flatShading: true }),
+  ];
+  for (let i = 0; i < 44; i++) {
+    const angle = (i / 44) * Math.PI * 2;
+    const distance = 185 + random() * 60;
+    const height = 23 + random() * 45;
+    const radius = 15 + random() * 23;
+    const ridge = new THREE.Mesh(
+      new THREE.ConeGeometry(radius, height, 7),
+      mountainMaterials[i % mountainMaterials.length],
+    );
+    ridge.position.set(Math.cos(angle) * distance, height / 2 - 2, Math.sin(angle) * distance);
+    ridge.rotation.y = random() * Math.PI;
+    ridge.receiveShadow = true;
+    scene.add(ridge);
+  }
+  // Dense clusters near both sides of the course.
+  for (let cluster = 0; cluster < 32; cluster++) {
+    const cx = -42 + random() * 85;
+    const cz = (random() < 0.5 ? -1 : 1) * (11 + random() * 35);
+    for (let j = 0; j < 9; j++) {
+      const x = cx + (random() - 0.5) * 11;
+      const z = cz + (random() - 0.5) * 11;
+      if (Math.abs(z) < 8.5 && x > -42 && x < 35) continue;
+      const choice = random();
+      const item = choice < 0.26 ? vegetation1(4 + random() * 3) :
+        choice < 0.59 ? vegetation2(1.8 + random() * 2.4) :
+        vegetation3(2.3 + random() * 2.9);
+      item.position.set(x, 0, z);
+      item.rotation.y = random() * Math.PI * 2;
+      terrainPatches.add(item);
+    }
   }
   for (let i = 0; i < 160; i++) {
     const x = (random() - 0.5) * 460;
