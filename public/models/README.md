@@ -9,3 +9,6 @@ The model is **not included** because automated downloading and redistribution r
 5. Adjust forward-axis alignment / dimensions in `src/visuals.ts` for your export. The GLB is visual only and does not alter physics.
 
 For public redistribution, follow the actual model license and attribution requirements. Don't commit the asset if redistribution is not authorized.
+
+
+"2002 Subaru Impreza WRX STi Extreme" (https://skfb.ly/pBTED) by SIU Car Garage is licensed under Creative Commons Attribution-NonCommercial (http://creativecommons.org/licenses/by-nc/4.0/).
