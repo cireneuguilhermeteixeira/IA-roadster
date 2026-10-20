@@ -1,7 +1,8 @@
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
-export function createVisuals(view) {
+export function createVisuals(view: HTMLElement) {
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#0c1928");
   scene.fog = new THREE.FogExp2("#0c1928", 0.004);
@@ -231,6 +232,9 @@ export function createVisuals(view) {
   scene.add(vehicle);
   const body = new THREE.Group();
   vehicle.add(body);
+  // Keep an original procedural fallback until the licensed GLB is provided.
+  const fallbackCar = new THREE.Group();
+  body.add(fallbackCar);
   const stations = [
     [-2.65, 0.64, 0.78],
     [-2.0, 0.94, 1.04],
@@ -280,7 +284,7 @@ export function createVisuals(view) {
   );
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
-  addMesh(geometry, red, body);
+  addMesh(geometry, red, fallbackCar);
   // Rounded hood, tapering cabin and dark roof.
   const roofShape = new THREE.Shape();
   roofShape.moveTo(-1.48, 0);
@@ -296,20 +300,20 @@ export function createVisuals(view) {
     bevelSize: 0.1,
     bevelThickness: 0.1,
   });
-  const cabin = addMesh(cabinGeo, glass, body, 0, 1.0, -0.8);
+  const cabin = addMesh(cabinGeo, glass, fallbackCar, 0, 1.0, -0.8);
   cabin.castShadow = true;
-  addBox(body, 3.5, 0.12, 2.03, carbon, -0.12, 0.3, 0);
-  addBox(body, 1.7, 0.11, 1.72, black, -0.12, 1.73, 0);
+  addBox(fallbackCar, 3.5, 0.12, 2.03, carbon, -0.12, 0.3, 0);
+  addBox(fallbackCar, 1.7, 0.11, 1.72, black, -0.12, 1.73, 0);
   for (const side of [-1, 1]) {
-    addBox(body, 3.5, 0.16, 0.1, carbon, -0.12, 0.17, side * 1.06);
-    addBox(body, 0.36, 0.065, 0.2, chrome, 0.55, 1.2, side * 1.02);
+    addBox(fallbackCar, 3.5, 0.16, 0.1, carbon, -0.12, 0.17, side * 1.06);
+    addBox(fallbackCar, 0.36, 0.065, 0.2, chrome, 0.55, 1.2, side * 1.02);
   }
   // Head and tail light ribbons, aerodynamic rear diffuser.
   for (const s of [-1, 1]) {
-    const lamp = addBox(body, 0.55, 0.055, 0.25, neon, 2.53, 0.74, s * 0.55);
+    const lamp = addBox(fallbackCar, 0.55, 0.055, 0.25, neon, 2.53, 0.74, s * 0.55);
     lamp.rotation.y = s * 0.18;
     addBox(
-      body,
+      fallbackCar,
       0.25,
       0.06,
       0.66,
@@ -319,13 +323,13 @@ export function createVisuals(view) {
       s * 0.57,
     );
   }
-  addBox(body, 0.38, 0.14, 1.85, black, -2.52, 0.1, 0);
-  addBox(body, 0.4, 0.12, 1.88, black, 2.52, 0.1, 0);
+  addBox(fallbackCar, 0.38, 0.14, 1.85, black, -2.52, 0.1, 0);
+  addBox(fallbackCar, 0.4, 0.12, 1.88, black, 2.52, 0.1, 0);
   for (const x of [-1.75, 1.76])
     for (const s of [-1, 1]) {
       const wheel = new THREE.Group();
       wheel.position.set(x, 0.17, s * 1.1);
-      body.add(wheel);
+      fallbackCar.add(wheel);
       const rubber = addMesh(
         new THREE.CylinderGeometry(0.48, 0.48, 0.28, 32),
         standardMaterial("#080a0d", 0, 0.95),
@@ -345,6 +349,43 @@ export function createVisuals(view) {
       );
       hub.rotation.x = Math.PI / 2;
     }
+  const subaru = new THREE.Group();
+  body.add(subaru);
+  const loader = new GLTFLoader();
+  loader.load(
+    "/models/subaru-2002.glb",
+    (gltf) => {
+      const model = gltf.scene;
+      model.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(model);
+      const dimensions = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      // Most glTF exports point along -Z. Convert that longitudinal axis to +X.
+      const lengthAlongZ = dimensions.z > dimensions.x;
+      const longitudinalSize = lengthAlongZ ? dimensions.z : dimensions.x;
+      const factor = 5.35 / Math.max(longitudinalSize, 0.001);
+      model.position.sub(center);
+      const container = new THREE.Group();
+      container.add(model);
+      container.scale.setScalar(factor);
+      if (lengthAlongZ) container.rotation.y = -Math.PI / 2;
+      subaru.add(container);
+      // Position the center of the model close to the simulation's physical origin.
+      subaru.position.y = 0.65;
+      subaru.traverse((object) => {
+        if (object instanceof THREE.Mesh) {
+          object.castShadow = true;
+          object.receiveShadow = true;
+        }
+      });
+      fallbackCar.visible = false;
+      console.info("Subaru GLB loaded. Verify forward orientation and wheel alignment.");
+    },
+    undefined,
+    (error) => {
+      console.warn("Subaru GLB unavailable. Using procedural fallback.", error);
+    },
+  );
   // Four gimballed jets: local down = thrust reaction along vehicle up.
   const thrusters = [];
   for (const x of [-1.8, 1.8])

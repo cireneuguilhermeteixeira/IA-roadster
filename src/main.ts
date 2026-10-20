@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { createVisuals } from "./visuals.js";
+import { createVisuals } from "./visuals";
 import "./style.css";
 
 // Forces and torques are deliberately simplified for arcade flight.
@@ -17,26 +17,26 @@ const {
   vehicle,
   body,
   thrusters,
-} = createVisuals(document.querySelector("#viewport"));
+} = createVisuals(document.querySelector<HTMLElement>("#viewport")!);
 
 const ui = {
-  alt: document.querySelector("#alt"),
-  att: document.querySelector("#att"),
-  speed: document.querySelector("#speed"),
-  status: document.querySelector("#status"),
-  power: document.querySelector("#powerbar"),
-  percent: document.querySelector("#percent"),
-  throttle: document.querySelector("#throttle"),
-  throttleValue: document.querySelector("#throttleValue"),
-  auto: document.querySelector("#auto"),
-  camera: document.querySelector("#camera"),
+  alt: document.querySelector<HTMLElement>("#alt")!,
+  att: document.querySelector<HTMLElement>("#att")!,
+  speed: document.querySelector<HTMLElement>("#speed")!,
+  status: document.querySelector<HTMLElement>("#status")!,
+  power: document.querySelector<HTMLElement>("#powerbar")!,
+  percent: document.querySelector<HTMLElement>("#percent")!,
+  throttle: document.querySelector<HTMLInputElement>("#throttle")!,
+  throttleValue: document.querySelector<HTMLElement>("#throttleValue")!,
+  auto: document.querySelector<HTMLElement>("#auto")!,
+  camera: document.querySelector<HTMLElement>("#camera")!,
 };
 let mode = "ready",
   trackDistance = 0,
   auto = false,
   follow = true,
   throttle = 0.5;
-const keys = {};
+const keys: Record<string, boolean> = {};
 const pos = new THREE.Vector3(),
   vel = new THREE.Vector3(),
   omega = new THREE.Vector3(),
@@ -45,7 +45,7 @@ const UP = new THREE.Vector3(0, 1, 0);
 const FORWARD_AWAY_FROM_RAMP = new THREE.Vector3(-1, 0, 0);
 const TARGET_UPRIGHT = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
 const inertia = new THREE.Vector3(3.4, 6, 4.7);
-function placeOnTrack(distance) {
+function placeOnTrack(distance: number) {
   const { point, angle } = trackAt(distance);
   pos
     .copy(point)
@@ -96,8 +96,8 @@ function launch() {
   trackDistance = 0;
   ui.status.textContent = "Percorrendo a rampa curva…";
 }
-document.querySelector("#launch").onclick = launch;
-document.querySelector("#reset").onclick = reset;
+document.querySelector<HTMLElement>("#launch")!.onclick = launch;
+document.querySelector<HTMLElement>("#reset")!.onclick = reset;
 ui.auto.onclick = toggleAuto;
 ui.camera.onclick = () => {
   follow = !follow;
@@ -111,7 +111,7 @@ const prevent = new Set([
   "ArrowLeft",
   "ArrowRight",
 ]);
-addEventListener("keydown", (e) => {
+addEventListener("keydown", (e: KeyboardEvent) => {
   if (prevent.has(e.code)) e.preventDefault();
   keys[e.code] = true;
   if (e.repeat) return;
@@ -119,13 +119,13 @@ addEventListener("keydown", (e) => {
   if (e.code === "KeyR") reset();
   if (e.code === "Enter") launch();
 });
-addEventListener("keyup", (e) => {
+addEventListener("keyup", (e: KeyboardEvent) => {
   keys[e.code] = false;
 });
 addEventListener("blur", () => {
   for (const k in keys) keys[k] = false;
 });
-function axis(positive, negative) {
+function axis(positive: string, negative: string) {
   return Number(!!keys[positive]) - Number(!!keys[negative]);
 }
 const worldAcceleration = new THREE.Vector3();
@@ -224,7 +224,7 @@ function automaticThrust() {
   };
 }
 
-function simulate(dt) {
+function simulate(dt: number) {
   if (mode === "ready") return;
   if (mode === "ramp") {
     const previousY = pos.y;
