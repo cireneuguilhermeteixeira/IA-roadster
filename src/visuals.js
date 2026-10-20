@@ -99,7 +99,7 @@ export function createVisuals(view) {
   }
   // A fixed half-loop: the road itself bends upward until its exit is upside down.
   const RAMP_RADIUS = 20,
-    RAMP_FLOOR = 4,
+    RAMP_FLOOR = 0,
     RAMP_TOP = RAMP_FLOOR + 2 * RAMP_RADIUS;
   const ENTRY_LENGTH = 28,
     EXIT_LENGTH = 12,
@@ -131,6 +131,12 @@ export function createVisuals(view) {
   }
   const landingX = trackAt(trackLength).point.x,
     landingZ = 0;
+  const rampLandingHeight = RAMP_FLOOR + 0.36;
+  function landingSurfaceAt(x, z) {
+    const overEntry =
+      x >= -ENTRY_LENGTH && x <= 0 && Math.abs(z) <= ROAD_WIDTH / 2;
+    return overEntry ? rampLandingHeight : 0.67;
+  }
   const landingRing = addMesh(
     new THREE.RingGeometry(2.9, 3.08, 64),
     new THREE.MeshBasicMaterial({
@@ -142,7 +148,7 @@ export function createVisuals(view) {
     }),
     scene,
     landingX,
-    0.035,
+    RAMP_FLOOR + 0.09,
     landingZ,
   );
   landingRing.rotation.x = -Math.PI / 2;
@@ -394,6 +400,8 @@ export function createVisuals(view) {
     trackLength,
     landingX,
     landingZ,
+    rampLandingHeight,
+    landingSurfaceAt,
     vehicle,
     body,
     thrusters,

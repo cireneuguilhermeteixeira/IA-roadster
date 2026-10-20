@@ -12,6 +12,8 @@ const {
   trackLength,
   landingX,
   landingZ,
+  rampLandingHeight,
+  landingSurfaceAt,
   vehicle,
   body,
   thrusters,
@@ -40,6 +42,8 @@ const pos = new THREE.Vector3(),
   omega = new THREE.Vector3(),
   quat = new THREE.Quaternion();
 const UP = new THREE.Vector3(0, 1, 0);
+const FORWARD_AWAY_FROM_RAMP = new THREE.Vector3(-1, 0, 0);
+const TARGET_UPRIGHT = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
 const inertia = new THREE.Vector3(3.4, 6, 4.7);
 function placeOnTrack(distance) {
   const { point, angle } = trackAt(distance);
@@ -135,9 +139,9 @@ function desiredTorques() {
   };
   if (!auto) return command;
 
-  // Quaternion error measures the shortest rotation back to upright.
-  // Proportional correction turns the car; angular damping stops overshoot.
-  const error = quat.clone().invert();
+  // Roll around the car's front-to-back axis to keep its nose away from the ramp.
+  // The target is upright with 180° yaw, rather than the starting orientation.
+  const error = quat.clone().invert().multiply(TARGET_UPRIGHT);
   if (error.w < 0) error.set(-error.x, -error.y, -error.z, -error.w);
   const angle = 2 * Math.acos(THREE.MathUtils.clamp(error.w, -1, 1));
   const sinHalf = Math.sqrt(Math.max(1 - error.w * error.w, 0));
@@ -164,21 +168,60 @@ function desiredTorques() {
   return command;
 }
 
-function automaticThrottle() {
+function automaticThrust() {
   const upAlignment = new THREE.Vector3(0, 1, 0).applyQuaternion(quat).y;
-  if (upAlignment <= 0.35) return 0;
+  if (upAlignment <= 0.35) return { base: 0, tiltX: 0, tiltZ: 0 };
 
-  // Descend quickly when high, then slow down near the ground.
+  // Request a 3D acceleration: vertical descent plus lateral position hold.
   const targetVy =
     pos.y > 12
       ? -5
-      : -Math.max(1.5, Math.sqrt(Math.max(pos.y - 0.67, 0)) * 1.35);
-  const desiredAy = THREE.MathUtils.clamp((targetVy - vel.y) * 2.8, -9, 18);
-  return THREE.MathUtils.clamp(
-    (9.81 + desiredAy) / (96 * upAlignment),
-    0,
-    0.65,
+      : -Math.max(
+          1.5,
+          Math.sqrt(Math.max(pos.y - rampLandingHeight, 0)) * 1.35,
+        );
+  const desiredAy = THREE.MathUtils.clamp((targetVy - vel.y) * 2.8, -9, 30);
+  const desiredThrust = new THREE.Vector3(
+    THREE.MathUtils.clamp((landingX - pos.x) * 5 - vel.x * 5, -20, 20),
+    9.81 + desiredAy,
+    THREE.MathUtils.clamp((landingZ - pos.z) * 5 - vel.z * 5, -20, 20),
   );
+  // The nozzles cannot ask for arbitrary side force while producing little lift.
+  const maxSideThrust = desiredThrust.y * Math.tan(0.6);
+  const sideThrust = Math.hypot(desiredThrust.x, desiredThrust.z);
+  if (sideThrust > maxSideThrust) {
+    const scale = maxSideThrust / sideThrust;
+    desiredThrust.x *= scale;
+    desiredThrust.z *= scale;
+  }
+  const localThrust = desiredThrust
+    .clone()
+    .applyQuaternion(quat.clone().invert());
+  const tiltZ = THREE.MathUtils.clamp(
+    -Math.atan2(localThrust.x, localThrust.y),
+    -0.7,
+    0.7,
+  );
+  const tiltX = THREE.MathUtils.clamp(
+    Math.atan2(localThrust.z, Math.hypot(localThrust.x, localThrust.y)),
+    -0.7,
+    0.7,
+  );
+  const actualDirection = new THREE.Vector3(0, 1, 0)
+    .applyEuler(new THREE.Euler(tiltX, 0, tiltZ))
+    .applyQuaternion(quat);
+  return {
+    base:
+      actualDirection.y > 0.1
+        ? THREE.MathUtils.clamp(
+            desiredThrust.y / (96 * actualDirection.y),
+            0,
+            0.65,
+          )
+        : 0,
+    tiltZ,
+    tiltX,
+  };
 }
 
 function simulate(dt) {
@@ -204,14 +247,11 @@ function simulate(dt) {
     torqueLocal = new THREE.Vector3();
   const xarm = 1.8,
     zarm = 1.08;
+  const autoThrust = auto ? automaticThrust() : null;
   const base =
-    keys.ShiftLeft || keys.ShiftRight
-      ? 1
-      : auto
-        ? automaticThrottle()
-        : throttle;
-  const strafe = axis("ArrowRight", "ArrowLeft") * 0.33;
-  const forward = axis("ArrowUp", "ArrowDown") * 0.33;
+    keys.ShiftLeft || keys.ShiftRight ? 1 : auto ? autoThrust.base : throttle;
+  const strafe = axis("ArrowRight", "ArrowLeft") * 0.55;
+  const forward = axis("ArrowUp", "ArrowDown") * 0.55;
   for (const t of thrusters) {
     // Differential upward thrust creates roll/pitch torque; limit for saturation.
     const power = THREE.MathUtils.clamp(
@@ -224,14 +264,14 @@ function simulate(dt) {
     t.power = power;
     // Gimbal axes: tilt.z controls lateral nozzle tilt, tilt.x longitudinal.
     const targetZ = THREE.MathUtils.clamp(
-      -strafe + torqueCommand.y * t.x * 0.018,
-      -0.4,
-      0.4,
+      (autoThrust?.tiltZ ?? 0) - strafe + torqueCommand.y * t.x * 0.018,
+      -0.7,
+      0.7,
     );
     const targetX = THREE.MathUtils.clamp(
-      forward + torqueCommand.y * t.z * 0.018,
-      -0.4,
-      0.4,
+      (autoThrust?.tiltX ?? 0) + forward + torqueCommand.y * t.z * 0.018,
+      -0.7,
+      0.7,
     );
     t.tilt.rotation.z = THREE.MathUtils.damp(t.tilt.rotation.z, targetZ, 7, dt);
     t.tilt.rotation.x = THREE.MathUtils.damp(t.tilt.rotation.x, targetX, 7, dt);
@@ -247,15 +287,6 @@ function simulate(dt) {
   }
   // Angular acceleration in local body principal axes; simple damping.
   const bodyOmega = omega.clone().applyQuaternion(quat.clone().invert());
-  // The arcade stability controller supplements differential thrust while inverted.
-  if (auto)
-    torqueLocal.add(
-      new THREE.Vector3(
-        torqueCommand.x,
-        torqueCommand.y,
-        torqueCommand.z,
-      ).multiplyScalar(0.8),
-    );
   const alpha = new THREE.Vector3(
     torqueLocal.x / inertia.x,
     torqueLocal.y / inertia.y,
@@ -271,34 +302,31 @@ function simulate(dt) {
     );
     quat.premultiply(dq).normalize();
   }
-  // Midday sun: keep the landing point directly under the ramp exit.
-  if (auto) {
-    totalAcceleration.x += THREE.MathUtils.clamp(
-      (landingX - pos.x) * 5 - vel.x * 5,
-      -24,
-      24,
-    );
-    totalAcceleration.z += THREE.MathUtils.clamp(
-      (landingZ - pos.z) * 5 - vel.z * 5,
-      -24,
-      24,
-    );
-  }
   vel.addScaledVector(totalAcceleration, dt);
   vel.multiplyScalar(Math.exp(-0.045 * dt));
   pos.addScaledVector(vel, dt);
-  if (pos.y <= 0.67) {
-    pos.y = 0.67;
+  const landingHeight = landingSurfaceAt(pos.x, pos.z);
+  if (vel.y <= 0 && pos.y <= landingHeight) {
+    pos.y = landingHeight;
     mode = "landed";
     vel.set(0, 0, 0);
     omega.set(0, 0, 0);
     const upright =
       new THREE.Vector3(0, 1, 0).applyQuaternion(quat).dot(UP) > 0.72;
+    const facingAway =
+      FORWARD_AWAY_FROM_RAMP.dot(
+        new THREE.Vector3(1, 0, 0).applyQuaternion(quat),
+      ) > 0.72;
     const landingError = Math.hypot(pos.x - landingX, pos.z - landingZ);
-    ui.status.textContent = upright
-      ? `POUSO CONCLUÍDO! ${landingError.toFixed(1)} m da marca. Reinicie para tentar novamente.`
-      : "IMPACTO! O carro não estava estabilizado. Reinicie.";
-    ui.status.style.color = upright ? "#87f5bb" : "#ff9e9e";
+    const safeLanding =
+      landingHeight === rampLandingHeight &&
+      upright &&
+      facingAway &&
+      landingError < 3.1;
+    ui.status.textContent = safeLanding
+      ? `POUSO NA RAMPA! ${landingError.toFixed(1)} m da marca, frente para fora.`
+      : "IMPACTO! Corrija a atitude e procure a marca na rampa.";
+    ui.status.style.color = safeLanding ? "#87f5bb" : "#ff9e9e";
   }
   vehicle.position.copy(pos);
   vehicle.quaternion.copy(quat);
@@ -322,6 +350,7 @@ function frame() {
   ui.alt.textContent = `${Math.max(0, pos.y - 0.67).toFixed(1)} m`;
   ui.att.textContent = `${tilt.toFixed(0)}°`;
   ui.speed.textContent = `${vel.y.toFixed(1)} m/s`;
+  ui.status.dataset.position = `${pos.x.toFixed(2)},${pos.z.toFixed(2)}`;
   ui.percent.textContent = `${Math.round(throttle * 100)}%`;
   ui.throttleValue.textContent = `${Math.round(throttle * 100)}%`;
   ui.power.style.width = `${Math.round(throttle * 100)}%`;
