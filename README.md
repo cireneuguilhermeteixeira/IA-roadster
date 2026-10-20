@@ -1,40 +1,25 @@
-# VectorMind — TypeScript + Vite + Three.js
+# VectorMind
 
-Migrated from the original IA-roadster JavaScript prototype, preserving the half-loop ramp, free-fall, four independently vectored thrusters, controls and automatic attitude stabilization.
+Three.js + Vite + TypeScript + Rapier WASM.
 
 ## Development
-
 ```bash
 npm install
-npm run dev
 npm run typecheck
-npm run build
+npm run dev
 ```
 
-## Subaru body
+## Simulation
+Rapier is the single authority for gravity, rigid-body movement, torque, inertia and collision. The Subaru is always a **dynamic** rigid body. The ramp is represented by the same triangular surface as the visible track. The car moves via forces, including a **magnetic guide and track motor** that hold it on the inverted half-loop until the end of the track; these are explicit game actuators rather than teleportation. The launch releases those forces, with no switch to kinematic motion.
 
-The app loads `public/models/2002_subaru_impreza_wrx_sti_extreme.glb` via `GLTFLoader` and uses the procedural fallback when the asset is unavailable. The Subaru GLB is included in the repository and loaded automatically. Its original creator/license must still be credited and redistribution rights verified.
+Four independent jets apply actual world-space forces at axle points, creating real torque through `RigidBody.addForceAtPoint`. The uploaded jetpack GLB appears when the car leaves the loop. Mass and moments of inertia are prototype estimates.
 
-### Controls
+The tires currently use fixed spherical colliders; they **do not** yet have moving suspension, independent wheel joints, tire-slip modelling, or a Rapier vehicle controller. The ramp contact is dynamic, but the guide motor is intentionally assisted because an inverted loop otherwise requires mechanically modeled adhesion.
 
-W/S pitch, A/D roll, Q/E yaw; arrow keys thrust vector; Shift full power; T auto stabilize; R reset; Enter launch.
+The PID controller remains custom: physics engines calculate the response to forces, not the vehicle's flight objectives. No manual position/velocity/quaternion integration remains. The 0.55x simulation playback is for usability.
 
-## Current physics limits
+## Controls
+W/S pitch, A/D roll, Q/E yaw; arrows vector thrust; Shift full thrust; T autopilot; R reset; Enter launch.
 
-The existing simulator implements simplified numerical flight dynamics rather than Rapier rigid-body simulation. The car follows a predefined half-loop path and then enters free fall. Vehicle geometry is purely visual; collision and auto-stabilization remain the original prototype behavior.
-
-## Credits
-
-Subaru model: attribution and license details must be added after obtaining the model from its creator. No third-party 3D mesh is included in this repository.
-
-## Environment
-
-Small optimized 3D environment with fewer, larger foreground vegetation objects and a seamless 360° equirectangular sunset panorama (`public/textures/sunset-panorama.svg`) for distant mountains and sky. No geometry is used for distant mountains. The panorama is an original lightweight SVG image and can be replaced with an HDRI or PNG of 2:1 aspect ratio. The flight simulation and ramp dimensions are unchanged.
-
-## Rigid-body simulation
-
-The free-flight integration uses Rapier 3D (WASM) with a 1450 kg chassis, calibrated principal inertias (690/3050/2800 kg·m²), 11 kN peak thrust per nozzle, finite actuator response and per-corner `addForceAtPoint`. The kinematic scripted half-loop is retained; the car is switched to a dynamic rigid body on launch. The supplied `jetpack_propulsor.glb` replaces procedural thruster meshes, with fallback on load failure. These are prototype calibration parameters rather than validated real-world Subaru values. Flight/landing and control behavior require in-browser evaluation.
-
-## Gameplay & camera refinements
-
-Jetpack meshes are attached at axle/wheel coordinates and remain hidden while on the track; they deploy when the vehicle is released. The viewport uses 0.55× simulation-time slow motion for a readable recovery window **without changing the physical gravity constant**. Follow-camera tracking preserves the user's zoom distance and pans the camera with the car. Rapier owns integration, gravity and collisions, while the remaining code implements input, PD control, actuator limits, visualization and scripted ramp motion. The flight mechanics remain experimental and require in-browser tuning. For correct collision-on-landing detection, vehicle contact events and ramp colliders still need integration.
+## Assets
+The Subaru and four jetpack visuals are loaded from GLB files under `public/models`. See the upstream model's distribution license before reuse.

@@ -177,7 +177,7 @@ export function createVisuals(view: HTMLElement) {
     surface.material.side = THREE.DoubleSide;
     return surface;
   }
-  roadRibbon(0, ROAD_WIDTH, 0, deckMat);
+  const rampSurface = roadRibbon(0, ROAD_WIDTH, 0, deckMat);
   roadRibbon(0, 0.06, 0.065, stripeMat);
   for (const z of [-ROAD_WIDTH / 2, ROAD_WIDTH / 2]) {
     roadRibbon(z, 0.12, 0.055, edgeMat);
@@ -438,7 +438,7 @@ export function createVisuals(view: HTMLElement) {
     landingX,
     landingZ,
     rampLandingHeight,
-    landingSurfaceAt,
+    rampSurface,
     vehicle,
     body,
     thrusters,
