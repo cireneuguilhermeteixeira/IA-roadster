@@ -49,6 +49,22 @@
             no topo.
           </div>
         </div>
+        <div class="section training">
+          <strong>Neuroevolução · Algoritmo Genético</strong>
+          <div class="controls training-controls">
+            <button id="train-toggle">INICIAR TREINO</button>
+            <button id="pilot-toggle">PILOTO NEURAL: OFF</button>
+            <button id="brain-export">EXPORTAR DNA</button>
+            <button id="brain-import">IMPORTAR DNA</button>
+            <input type="file" id="brain-file" accept="application/json,.json" hidden />
+          </div>
+          <div id="training-stats" class="training-stats" aria-live="polite">GERAÇÃO 1 · 0/32</div>
+          <small>Ativação dos neurônios</small>
+          <canvas id="brain-canvas" width="320" height="170"></canvas>
+          <small>Fitness por geração (melhor e média)</small>
+          <canvas id="history-canvas" width="320" height="95"></canvas>
+          <small>Treino com física isolada · salvamento local a cada geração</small>
+        </div>
         <div class="section warning">
           Carroceria Subaru 2002 (GLB opcional; fallback procedural). Simulação de voo recreativa,
           sem representar um sistema real de propulsão.

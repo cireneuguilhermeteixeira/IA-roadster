@@ -28,6 +28,7 @@ export type FlightInputs = {
   forward: number;
   lateral: number;
   thrustDirection?: THREE.Vector3;
+  jets?: { power: number; tiltX: number; tiltZ: number }[];
 };
 const asVector = (v: THREE.Vector3) => ({ x: v.x, y: v.y, z: v.z });
 
@@ -103,6 +104,17 @@ export class VehiclePhysics {
       t.yaw.visible = false;
       t.tilt.rotation.set(0, 0, 0);
     }
+  }
+  primeFlight(state: State) {
+    this.released = true;
+    this.landed = false;
+    this.body.setTranslation(asVector(state.position), true);
+    this.body.setRotation({x:state.rotation.x,y:state.rotation.y,z:state.rotation.z,w:state.rotation.w}, true);
+    this.body.setLinvel(asVector(state.velocity), true);
+    this.body.setAngvel(asVector(state.angularVelocity), true);
+    this.body.resetForces(true);
+    this.body.resetTorques(true);
+    for (const t of this.thrusters) { t.power = 0; t.tilt.rotation.set(0,0,0); t.yaw.visible = true; }
   }
   get flying() {
     return this.released;
@@ -230,8 +242,12 @@ export class VehiclePhysics {
     }
     const state = this.snapshot(),
       q = state.rotation;
-    for (const t of this.thrusters) {
-      if (input.thrustDirection) {
+    for (const [index,t] of this.thrusters.entries()) {
+      const direct = input.jets?.[index];
+      if (direct) {
+        t.tilt.rotation.x = THREE.MathUtils.damp(t.tilt.rotation.x, THREE.MathUtils.clamp(direct.tiltX,-0.65,0.65), 3, dt);
+        t.tilt.rotation.z = THREE.MathUtils.damp(t.tilt.rotation.z, THREE.MathUtils.clamp(direct.tiltZ,-0.65,0.65), 3, dt);
+      } else if (input.thrustDirection) {
         const localDirection = input.thrustDirection.clone().applyQuaternion(q.clone().invert());
         const target = new THREE.Quaternion().setFromUnitVectors(
           new THREE.Vector3(0, 1, 0),
@@ -261,7 +277,7 @@ export class VehiclePhysics {
         Math.sign(localDirection.y || 1) * Math.max(0.25, Math.abs(localDirection.y));
       // r × F: roll contribution is -z*Fy; pitch contribution is x*Fy.
       const target = THREE.MathUtils.clamp(
-        input.base * alignment -
+        direct ? direct.power : input.base * alignment -
           (input.torque.x * t.z) / (4 * 1.1 * 1.1 * MAX_THRUST * verticalAuthority) +
           (input.torque.z * t.x) / (4 * 1.76 * 1.76 * MAX_THRUST * verticalAuthority),
         0,

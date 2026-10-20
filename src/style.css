@@ -174,3 +174,10 @@ canvas {
     overflow: auto;
   }
 }
+
+.training { border-top:1px solid #47607d77;padding-top:12px; }
+.training-controls { margin:10px 0; }
+.training-stats {font-size:11px;font-variant-numeric:tabular-nums;color:#9bdcff;margin:8px 0;line-height:1.5}
+.training canvas { display:block;width:100%;height:auto;max-height:175px;background:#0a1420;border:1px solid #32516a;border-radius:8px;margin:6px 0 10px }
+.training small {color:#a4bcd3;font-size:10px;}
+.hud {max-height:calc(100vh - 40px);overflow-y:auto;}
