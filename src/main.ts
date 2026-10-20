@@ -3,6 +3,10 @@ import RAPIER from "@dimforge/rapier3d-compat";
 import { createVisuals } from "./visuals";
 import { VehiclePhysics, FIXED_DT } from "./physics";
 import { FlightController } from "./controller";
+import { EvolutionTrainer } from "./learning/trainer";
+import { decode, forward } from "./learning/network";
+import { encodeSensors } from "./learning/sensors";
+import { drawNetwork, drawHistory } from "./learning/visualize";
 import "./style.css";
 
 const view = createVisuals(document.querySelector<HTMLElement>("#viewport")!);
@@ -34,6 +38,17 @@ const ui = {
 const keys: Record<string, boolean> = {};
 const controller = new FlightController();
 let physics: VehiclePhysics;
+let trainer: EvolutionTrainer;
+let neuralPilot = false;
+let hudFrame = 0;
+const trainingButton = document.querySelector<HTMLButtonElement>("#train-toggle")!;
+const pilotButton = document.querySelector<HTMLButtonElement>("#pilot-toggle")!;
+const exportButton = document.querySelector<HTMLButtonElement>("#brain-export")!;
+const importButton = document.querySelector<HTMLButtonElement>("#brain-import")!;
+const importFile = document.querySelector<HTMLInputElement>("#brain-file")!;
+const trainingStats = document.querySelector<HTMLElement>("#training-stats")!;
+const brainCanvas = document.querySelector<HTMLCanvasElement>("#brain-canvas")!;
+const historyCanvas = document.querySelector<HTMLCanvasElement>("#history-canvas")!;
 let mode: "ready" | "ramp" | "flight" = "ready";
 let auto = true,
   follow = true,
@@ -44,7 +59,7 @@ const reactorNote = reactorsEnabled ? "" : " Reatores 100% desligados (teste).";
 function reset() {
   physics.reset();
   mode = "ready";
-  auto = reactorsEnabled;
+  auto = reactorsEnabled && !neuralPilot;
   throttle = reactorsEnabled ? 1 : 0;
   ui.auto.textContent = `ESTABILIZAÇÃO: ${auto ? "ON" : "OFF"}`;
   ui.throttle.value = reactorsEnabled ? "100" : "0";
@@ -62,6 +77,8 @@ function launch() {
 document.querySelector<HTMLElement>("#launch")!.onclick = launch;
 document.querySelector<HTMLElement>("#reset")!.onclick = reset;
 ui.auto.onclick = () => {
+  neuralPilot = false;
+  pilotButton.textContent = "PILOTO NEURAL: OFF";
   auto = !auto;
   ui.auto.textContent = `ESTABILIZAÇÃO: ${auto ? "ON" : "OFF"}`;
 };
@@ -89,18 +106,39 @@ addEventListener("keydown", (event: KeyboardEvent) => {
 });
 addEventListener("keyup", (event: KeyboardEvent) => (keys[event.code] = false));
 addEventListener("blur", () => Object.keys(keys).forEach((key) => (keys[key] = false)));
+trainingButton.onclick=()=>{
+  trainer.running ? trainer.pause() : trainer.start();
+  trainingButton.textContent=trainer.running?"PAUSAR TREINO":"INICIAR TREINO";
+};
+pilotButton.onclick=()=>{
+  if(!trainer.champion){ui.status.textContent="Treine ao menos uma geração antes de ativar o piloto neural.";return;}
+  neuralPilot=!neuralPilot; auto=false;ui.auto.textContent="ESTABILIZAÇÃO: OFF";
+  pilotButton.textContent=`PILOTO NEURAL: ${neuralPilot?"ON":"OFF"}`;
+};
+exportButton.onclick=()=>{if(trainer.champion)trainer.exportJSON();else ui.status.textContent="Ainda não existe um cérebro treinado para exportar.";};
+importButton.onclick=()=>importFile.click();
+importFile.onchange=async()=>{
+  const file=importFile.files?.[0];if(!file)return;
+  try{trainer.importJSON(await file.text());ui.status.textContent="Cérebro importado com sucesso.";}
+  catch(error){ui.status.textContent="Erro ao importar cérebro: "+String(error);}
+  importFile.value="";
+};
 const clock = new THREE.Clock();
 let accumulator = 0;
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
   accumulator += dt;
+  trainer.tick(12);
   while (accumulator >= FIXED_DT) {
     if (mode !== "ready") {
-      const controls =
-        mode === "flight"
-          ? controller.command(physics.snapshot(), keys, auto, throttle, landing)
-          : undefined;
+      let controls = mode === "flight"
+        ? controller.command(physics.snapshot(), keys, auto, throttle, landing)
+        : undefined;
+      if(mode==="flight" && neuralPilot && trainer.champion) {
+        const trace=forward(trainer.champion,encodeSensors(physics.snapshot(),landing,0));
+        controls={torque:new THREE.Vector3(),base:0,forward:0,lateral:0,powerLimit:throttle,jets:decode(trace.outputs)};
+      }
       physics.step(FIXED_DT, controls);
       if (mode === "ramp" && physics.flying) {
         mode = "flight";
@@ -133,10 +171,16 @@ function frame() {
   }
   orbit.update();
   renderer.render(scene, camera);
+  if((hudFrame++%8)===0){
+    trainingStats.textContent=`GERAÇÃO ${trainer.generation} · INDIVÍDUO ${Math.min(trainer.index+1,32)}/32 · MELHOR ${Number.isFinite(trainer.bestFitness)?trainer.bestFitness.toFixed(1):"—"} · EPISÓDIOS ${trainer.episodes}`;
+    if(trainer.currentTrace)drawNetwork(brainCanvas,trainer.currentTrace);
+    drawHistory(historyCanvas,trainer.history);
+  }
 }
 (async () => {
   await RAPIER.init();
   physics = new VehiclePhysics(rampSurface, trackAt, trackLength, thrusters, reactorsEnabled);
+  trainer = new EvolutionTrainer(rampSurface, trackAt, trackLength, landing);
   reset();
   frame();
 })().catch((error) => {

@@ -29,3 +29,13 @@ Open the app with `?reactors=off` to test a ballistic flight with all four react
 ## Assets
 
 The Subaru and four jetpack visuals are loaded from GLB files under `public/models`. See the upstream model's distribution license before reuse.
+
+## Genetic flight controller (no ML libraries)
+
+Inspired by [JVictorDias/Dinossauro-Google](https://github.com/JVictorDias/Dinossauro-Google), which evolves a multilayer perceptron by random mutation, with population fitness selection. This independent TypeScript implementation uses a handwritten dense MLP (18→24→16→12, 1,060 trainable parameters), tanh activations, a population of 32, elite preservation (4), top-parent selection, uniform crossover, Gaussian mutation and occasional random immigrants.
+
+The 18 sensors consist of target offset (3), local velocity (3), local up (3), desired facing direction (3), local angular velocity (3), relative height (1), elapsed flight time (1) and bias (1). All inputs are normalized and clamped. Twelve outputs directly command four independent nozzle powers and four tilt-X + four tilt-Z angles.
+
+Click **INICIAR TREINO**: an isolated Rapier world simulates the ramp once to capture a release state; then it evaluates each genome in fixed-length episodes with randomized release state. Episodes run in small chunks while the scene remains interactive. Selection rewards upright, forward-facing, gentle, low-spin landings near the target, penalizes long episodes and non-landing. The visual neural graph highlights signed activations and fitness history tracks generation best and mean. The best genome and history are saved in browser localStorage after every generation and can be exported/imported as JSON. **PILOTO NEURAL** applies the champion to the real-time vehicle (turn the standard autopilot off).
+
+Limitations: a single training simulation runs sequentially alongside the renderer, so learning may take many generations and significant wall-clock time. No guarantee of competent behavior without training; no historical pretrained champion is provided. The current reward uses the existing landing detector; complex terrain, accurate collision-speed sensing, rolling/sliding and map randomization require further environment instrumentation before generalization can be claimed. The manual controller and Rapier world remain unchanged for baseline comparison.
