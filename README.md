@@ -13,7 +13,7 @@ npm run build
 
 ## Subaru body
 
-The app loads `public/models/subaru-2002.glb` via `GLTFLoader` and uses the procedural fallback when the asset is unavailable. **The linked Sketchfab model is not bundled**: access/license could not be verified. Read [model instructions](public/models/README.md).
+The app loads `public/models/2002_subaru_impreza_wrx_sti_extreme.glb` via `GLTFLoader` and uses the procedural fallback when the asset is unavailable. The Subaru GLB is included in the repository and loaded automatically. Its original creator/license must still be credited and redistribution rights verified.
 
 ### Controls
 
@@ -26,3 +26,7 @@ The existing simulator implements simplified numerical flight dynamics rather th
 ## Credits
 
 Subaru model: attribution and license details must be added after obtaining the model from its creator. No third-party 3D mesh is included in this repository.
+
+## Caatinga scene
+
+Procedural scenery inspired by interior Ceará, including carnaúba palms, mandacaru cacti, dry trees, sandy soil and rocks. The ramp radius, approach and inverted exit have been enlarged. The vegetation is decorative and has no colliders.
