@@ -1,8 +1,9 @@
 import * as THREE from "three";
+import RAPIER from "@dimforge/rapier3d-compat";
 import { createVisuals } from "./visuals";
 import "./style.css";
 
-// Forces and torques are deliberately simplified for arcade flight.
+// Rapier rigid-body dynamics; forces are applied independently at the four corners.
 const {
   scene,
   camera,
@@ -44,7 +45,28 @@ const pos = new THREE.Vector3(),
 const UP = new THREE.Vector3(0, 1, 0);
 const FORWARD_AWAY_FROM_RAMP = new THREE.Vector3(-1, 0, 0);
 const TARGET_UPRIGHT = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
-const inertia = new THREE.Vector3(3.4, 6, 4.7);
+// Approximate Subaru mass properties. All values are SI; tune against test scenarios.
+const MASS = 1450;
+const THRUST_MAX = 11000; // Newtons per thruster; 44 kN total > 14.2 kN vehicle weight.
+const THRUST_RESPONSE = 5; // 1/s
+const GIMBAL_RESPONSE = 4; // 1/s
+const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
+let world: RAPIER.World;
+let rigidBody: RAPIER.RigidBody;
+function vec3(p: {x:number;y:number;z:number}) { return {x:p.x,y:p.y,z:p.z}; }
+function syncBody() {
+  const translation = rigidBody.translation();
+  const rotation = rigidBody.rotation();
+  pos.set(translation.x,translation.y,translation.z);
+  quat.set(rotation.x,rotation.y,rotation.z,rotation.w);
+  const linear = rigidBody.linvel();
+  const angular = rigidBody.angvel();
+  vel.set(linear.x,linear.y,linear.z);
+  omega.set(angular.x,angular.y,angular.z);
+  vehicle.position.copy(pos);
+  vehicle.quaternion.copy(quat);
+}
+
 function placeOnTrack(distance: number) {
   const { point, angle } = trackAt(distance);
   pos
@@ -55,6 +77,10 @@ function placeOnTrack(distance: number) {
       ),
     );
   quat.setFromAxisAngle(new THREE.Vector3(0, 0, 1), angle);
+  if (rigidBody) {
+    rigidBody.setNextKinematicTranslation(vec3(pos));
+    rigidBody.setNextKinematicRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w });
+  }
   vehicle.position.copy(pos);
   vehicle.quaternion.copy(quat);
   return angle;
@@ -67,13 +93,20 @@ function reset() {
   omega.set(0, 0, 0);
   body.position.set(0, 0, 0);
   throttle = 0.5;
-  ui.throttle.value = 50;
+  ui.throttle.value = "50";
   auto = false;
   ui.auto.textContent = "ESTABILIZAÇÃO: OFF";
   ui.status.textContent = "Pronto para percorrer a rampa.";
   ui.status.style.color = "#9bdcff";
   camera.position.set(52, 31, 47);
   orbit.target.set(0, 23, 0);
+  if (rigidBody) {
+    rigidBody.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    rigidBody.setTranslation(vec3(pos), true);
+    rigidBody.setRotation({ x: quat.x, y: quat.y, z: quat.z, w: quat.w }, true);
+    rigidBody.setLinvel({x:0,y:0,z:0}, true);
+    rigidBody.setAngvel({x:0,y:0,z:0}, true);
+  }
   for (const t of thrusters) {
     t.power = 0;
     t.yaw.rotation.set(0, 0, 0);
@@ -131,41 +164,26 @@ function axis(positive: string, negative: string) {
 const worldAcceleration = new THREE.Vector3();
 
 function desiredTorques() {
-  // Manual input requests torque around the car's local axes.
+  // Torques in N*m, expressed in vehicle-local coordinates.
   const command = {
-    x: axis("KeyA", "KeyD") * 13,
-    y: axis("KeyQ", "KeyE") * 9,
-    z: axis("KeyW", "KeyS") * 15,
+    x: axis("KeyA", "KeyD") * 14000,
+    y: axis("KeyQ", "KeyE") * 8000,
+    z: axis("KeyW", "KeyS") * 17000,
   };
   if (!auto) return command;
-
-  // Roll around the car's front-to-back axis to keep its nose away from the ramp.
-  // The target is upright with 180° yaw, rather than the starting orientation.
   const error = quat.clone().invert().multiply(TARGET_UPRIGHT);
   if (error.w < 0) error.set(-error.x, -error.y, -error.z, -error.w);
   const angle = 2 * Math.acos(THREE.MathUtils.clamp(error.w, -1, 1));
-  const sinHalf = Math.sqrt(Math.max(1 - error.w * error.w, 0));
-  const errorAxis =
-    sinHalf > 0.0001
-      ? new THREE.Vector3(error.x, error.y, error.z).divideScalar(sinHalf)
-      : new THREE.Vector3(1, 0, 0);
+  const sinHalf = Math.sqrt(Math.max(0, 1 - error.w * error.w));
+  const axisError = sinHalf > 1e-4 ?
+    new THREE.Vector3(error.x, error.y, error.z).divideScalar(sinHalf) :
+    new THREE.Vector3();
   const localOmega = omega.clone().applyQuaternion(quat.clone().invert());
-  command.x += THREE.MathUtils.clamp(
-    errorAxis.x * angle * 17 - localOmega.x * 9,
-    -32,
-    32,
-  );
-  command.y += THREE.MathUtils.clamp(
-    errorAxis.y * angle * 12 - localOmega.y * 7,
-    -20,
-    20,
-  );
-  command.z += THREE.MathUtils.clamp(
-    errorAxis.z * angle * 18 - localOmega.z * 10,
-    -36,
-    36,
-  );
-  return command;
+  return {
+    x: command.x + THREE.MathUtils.clamp(axisError.x * angle * 13500 - localOmega.x * 11500, -19000, 19000),
+    y: command.y + THREE.MathUtils.clamp(axisError.y * angle * 8000 - localOmega.y * 7800, -12500, 12500),
+    z: command.z + THREE.MathUtils.clamp(axisError.z * angle * 15500 - localOmega.z * 13700, -24000, 24000),
+  };
 }
 
 function automaticThrust() {
@@ -214,9 +232,9 @@ function automaticThrust() {
     base:
       actualDirection.y > 0.1
         ? THREE.MathUtils.clamp(
-            desiredThrust.y / (96 * actualDirection.y),
+            desiredThrust.y / ((4 * THRUST_MAX / MASS) * actualDirection.y),
             0,
-            0.65,
+            0.95,
           )
         : 0,
     tiltZ,
@@ -227,111 +245,74 @@ function automaticThrust() {
 function simulate(dt: number) {
   if (mode === "ready") return;
   if (mode === "ramp") {
-    const previousY = pos.y;
     trackDistance = Math.min(trackDistance + dt * 23, trackLength);
     const angle = placeOnTrack(trackDistance);
-    vel.set(23 * Math.cos(angle), (pos.y - previousY) / dt, 0);
+    world.timestep = dt;
+    world.step();
+    syncBody();
     if (trackDistance >= trackLength) {
       mode = "flight";
-      vel.set(0, 0, 0);
-      omega.set(0, 0, 0);
-      ui.status.textContent = auto
-        ? "SAÍDA INVERTIDA! Estabilização ativa; descendo para a marca."
-        : "SAÍDA INVERTIDA! Ative T para estabilizar e pousar na marca.";
+      rigidBody.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+      // Preserve launch velocity along the tangent of the inverted exit.
+      rigidBody.setLinvel({x:23 * Math.cos(angle),y:23 * Math.sin(angle),z:0}, true);
+      rigidBody.setAngvel({x:0,y:0,z:0}, true);
+      syncBody();
+      ui.status.textContent = "SAÍDA INVERTIDA! Controle os quatro propulsores.";
     }
     return;
   }
   if (mode === "landed") return;
-  const torqueCommand = desiredTorques();
-  const totalAcceleration = new THREE.Vector3(0, -9.81, 0),
-    torqueLocal = new THREE.Vector3();
-  const xarm = 1.8,
-    zarm = 1.08;
-  const autoThrust = auto ? automaticThrust() : null;
-  const base =
-    keys.ShiftLeft || keys.ShiftRight ? 1 : auto ? autoThrust.base : throttle;
+  syncBody();
+  const command = desiredTorques();
+  const autopilot = auto ? automaticThrust() : null;
+  const base = keys.ShiftLeft || keys.ShiftRight ? 1 : auto ? autopilot!.base : throttle;
   const strafe = axis("ArrowRight", "ArrowLeft") * 0.55;
   const forward = axis("ArrowUp", "ArrowDown") * 0.55;
   for (const t of thrusters) {
-    // Differential upward thrust creates roll/pitch torque; limit for saturation.
-    const power = THREE.MathUtils.clamp(
-      base +
-        (torqueCommand.x * -t.z) / (4 * zarm * zarm * 24) +
-        (torqueCommand.z * t.x) / (4 * xarm * xarm * 24),
-      0,
-      1,
+    const x = t.x, z = t.z;
+    // For F=(0,F,0), torque r×F = (-z F, 0, x F).
+    const requested = THREE.MathUtils.clamp(
+      base + (-command.x * z / (4 * 1.08 * 1.08 * THRUST_MAX)) +
+      (command.z * x / (4 * 1.8 * 1.8 * THRUST_MAX)), 0, 1
     );
-    t.power = power;
-    // Gimbal axes: tilt.z controls lateral nozzle tilt, tilt.x longitudinal.
-    const targetZ = THREE.MathUtils.clamp(
-      (autoThrust?.tiltZ ?? 0) - strafe + torqueCommand.y * t.x * 0.018,
-      -0.7,
-      0.7,
-    );
-    const targetX = THREE.MathUtils.clamp(
-      (autoThrust?.tiltX ?? 0) + forward + torqueCommand.y * t.z * 0.018,
-      -0.7,
-      0.7,
-    );
-    t.tilt.rotation.z = THREE.MathUtils.damp(t.tilt.rotation.z, targetZ, 7, dt);
-    t.tilt.rotation.x = THREE.MathUtils.damp(t.tilt.rotation.x, targetX, 7, dt);
-    const reaction = new THREE.Vector3(0, 1, 0)
-      .applyEuler(t.tilt.rotation)
-      .multiplyScalar(power * 24); // acceleration
-    worldAcceleration.copy(reaction).applyQuaternion(quat);
-    totalAcceleration.add(worldAcceleration);
-    torqueLocal.add(new THREE.Vector3(t.x, -0.1, t.z).cross(reaction));
-    t.exhaust.visible = power > 0.025;
-    t.exhaust.scale.y = 0.38 + power * 1.7;
-    t.light.intensity = power * 5;
+    t.power = THREE.MathUtils.damp(t.power, requested, THRUST_RESPONSE, dt);
+    const targetZ = THREE.MathUtils.clamp((autopilot?.tiltZ ?? 0) - strafe +
+      command.y * x / 85000, -0.65, 0.65);
+    const targetX = THREE.MathUtils.clamp((autopilot?.tiltX ?? 0) + forward +
+      command.y * z / 60000, -0.65, 0.65);
+    t.tilt.rotation.z = THREE.MathUtils.damp(t.tilt.rotation.z, targetZ, GIMBAL_RESPONSE, dt);
+    t.tilt.rotation.x = THREE.MathUtils.damp(t.tilt.rotation.x, targetX, GIMBAL_RESPONSE, dt);
+    const localForce = new THREE.Vector3(0, THRUST_MAX * t.power, 0).applyEuler(t.tilt.rotation);
+    const worldForce = localForce.clone().applyQuaternion(quat);
+    const point = new THREE.Vector3(x, -0.1, z).applyQuaternion(quat).add(pos);
+    rigidBody.addForceAtPoint(vec3(worldForce), vec3(point), true);
+    t.exhaust.visible = t.power > 0.025;
+    t.exhaust.scale.y = 0.38 + t.power * 1.7;
+    t.light.intensity = t.power * 5;
   }
-  // Angular acceleration in local body principal axes; simple damping.
-  const bodyOmega = omega.clone().applyQuaternion(quat.clone().invert());
-  const alpha = new THREE.Vector3(
-    torqueLocal.x / inertia.x,
-    torqueLocal.y / inertia.y,
-    torqueLocal.z / inertia.z,
-  ).addScaledVector(bodyOmega, -2.1);
-  omega.addScaledVector(alpha.applyQuaternion(quat), dt);
-  omega.clampLength(0, 5.7);
-  const speed = omega.length();
-  if (speed > 1e-7) {
-    const dq = new THREE.Quaternion().setFromAxisAngle(
-      omega.clone().normalize(),
-      speed * dt,
-    );
-    quat.premultiply(dq).normalize();
-  }
-  vel.addScaledVector(totalAcceleration, dt);
-  vel.multiplyScalar(Math.exp(-0.045 * dt));
-  pos.addScaledVector(vel, dt);
-  const landingHeight = landingSurfaceAt(pos.x, pos.z);
-  if (vel.y <= 0 && pos.y <= landingHeight) {
-    pos.y = landingHeight;
+  world.timestep = dt;
+  world.step();
+  syncBody();
+  // Ground and ramp contacts handled by Rapier colliders. No position teleporting.
+  if (pos.y < -12) {
     mode = "landed";
-    vel.set(0, 0, 0);
-    omega.set(0, 0, 0);
-    const upright =
-      new THREE.Vector3(0, 1, 0).applyQuaternion(quat).dot(UP) > 0.72;
-    const facingAway =
-      FORWARD_AWAY_FROM_RAMP.dot(
-        new THREE.Vector3(1, 0, 0).applyQuaternion(quat),
-      ) > 0.72;
-    const landingError = Math.hypot(pos.x - landingX, pos.z - landingZ);
-    const safeLanding =
-      landingHeight === rampLandingHeight &&
-      upright &&
-      facingAway &&
-      landingError < 3.1;
-    ui.status.textContent = safeLanding
-      ? `POUSO NA RAMPA! ${landingError.toFixed(1)} m da marca, frente para fora.`
-      : "IMPACTO! Corrija a atitude e procure a marca na rampa.";
-    ui.status.style.color = safeLanding ? "#87f5bb" : "#ff9e9e";
+    ui.status.textContent = "Fora dos limites da simulação. Reinicie para tentar novamente.";
   }
-  vehicle.position.copy(pos);
-  vehicle.quaternion.copy(quat);
 }
-reset();
+
+async function initializePhysics() {
+  await RAPIER.init();
+  world = new RAPIER.World({x:0,y:-9.81,z:0});
+  // Fixed ground (the detailed ramp still uses procedural geometry and a scripted kinematic launch).
+  world.createCollider(RAPIER.ColliderDesc.cuboid(115,0.15,115).setTranslation(0,-0.15,0));
+  const massProperties = RAPIER.RigidBodyDesc.kinematicPositionBased()
+    .setAdditionalMassProperties(
+      MASS, {x:0,y:0,z:0}, {x:690,z:2800,y:3050}, IDENTITY
+    );
+  rigidBody = world.createRigidBody(massProperties);
+  world.createCollider(RAPIER.ColliderDesc.cuboid(2.25,0.42,0.92).setTranslation(0,0.44,0).setDensity(0), rigidBody);
+  reset();
+}
 const clock = new THREE.Clock();
 let accumulator = 0;
 const FIXED = 1 / 120;
@@ -362,7 +343,10 @@ function frame() {
   orbit.update();
   renderer.render(scene, camera);
 }
-frame();
+initializePhysics().then(frame).catch((error) => {
+  ui.status.textContent = `Falha ao inicializar Rapier: ${error}`;
+  console.error(error);
+});
 addEventListener("resize", () => {
   camera.aspect = innerWidth / innerHeight;
   camera.updateProjectionMatrix();

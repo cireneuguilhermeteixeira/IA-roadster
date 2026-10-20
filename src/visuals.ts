@@ -367,6 +367,7 @@ export function createVisuals(view: HTMLElement) {
   );
   // Four gimballed jets: local down = thrust reaction along vehicle up.
   const thrusters = [];
+  const jetMounts: { tilt: THREE.Group; fallbackJet: THREE.Group }[] = [];
   for (const x of [-1.8, 1.8])
     for (const z of [-1.08, 1.08]) {
       const yaw = new THREE.Group();
@@ -374,23 +375,13 @@ export function createVisuals(view: HTMLElement) {
       body.add(yaw);
       const tilt = new THREE.Group();
       yaw.add(tilt);
-      addMesh(new THREE.SphereGeometry(0.18, 16, 12), chrome, tilt);
-      addMesh(
-        new THREE.CylinderGeometry(0.12, 0.2, 0.55, 24),
-        carbon,
-        tilt,
-        0,
-        -0.31,
-        0,
-      );
-      addMesh(
-        new THREE.CylinderGeometry(0.2, 0.17, 0.11, 24),
-        chrome,
-        tilt,
-        0,
-        -0.62,
-        0,
-      );
+      // The uploaded jetpack GLB replaces the procedural jet geometry.
+      // A lightweight silhouette is used only if the file fails to load.
+      const fallbackJet = new THREE.Group();
+      tilt.add(fallbackJet);
+      addMesh(new THREE.CylinderGeometry(0.12, 0.2, 0.55, 12), carbon, fallbackJet, 0, -0.31, 0);
+      addMesh(new THREE.CylinderGeometry(0.2, 0.17, 0.11, 12), chrome, fallbackJet, 0, -0.62, 0);
+      jetMounts.push({ tilt, fallbackJet });
       const exhaust = addMesh(
         new THREE.CylinderGeometry(0.09, 0.24, 0.94, 20, 1, true),
         new THREE.MeshBasicMaterial({
@@ -411,6 +402,27 @@ export function createVisuals(view: HTMLElement) {
       tilt.add(light);
       thrusters.push({ x, z, yaw, tilt, exhaust, light, power: 0 });
     }
+  loader.load("/models/jetpack_propulsor.glb", (gltf) => {
+    const original = gltf.scene;
+    original.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(original);
+    const size = bounds.getSize(new THREE.Vector3());
+    const center = bounds.getCenter(new THREE.Vector3());
+    const scale = 0.75 / Math.max(size.x, size.y, size.z, 0.001);
+    for (const mount of jetMounts) {
+      const model = original.clone(true);
+      model.position.sub(center);
+      const pivot = new THREE.Group();
+      pivot.position.y = -0.37;
+      pivot.scale.setScalar(scale);
+      pivot.add(model);
+      mount.tilt.add(pivot);
+      mount.fallbackJet.visible = false;
+      model.traverse((child) => {
+        if (child instanceof THREE.Mesh) child.castShadow = true;
+      });
+    }
+  }, undefined, (error) => console.warn("Jetpack asset load failed, using fallback.", error));
   return {
     scene,
     camera,

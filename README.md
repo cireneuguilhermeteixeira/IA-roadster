@@ -30,3 +30,7 @@ Subaru model: attribution and license details must be added after obtaining the 
 ## Environment
 
 Small optimized 3D environment with fewer, larger foreground vegetation objects and a seamless 360° equirectangular sunset panorama (`public/textures/sunset-panorama.svg`) for distant mountains and sky. No geometry is used for distant mountains. The panorama is an original lightweight SVG image and can be replaced with an HDRI or PNG of 2:1 aspect ratio. The flight simulation and ramp dimensions are unchanged.
+
+## Rigid-body simulation
+
+The free-flight integration uses Rapier 3D (WASM) with a 1450 kg chassis, calibrated principal inertias (690/3050/2800 kg·m²), 11 kN peak thrust per nozzle, finite actuator response and per-corner `addForceAtPoint`. The kinematic scripted half-loop is retained; the car is switched to a dynamic rigid body on launch. The supplied `jetpack_propulsor.glb` replaces procedural thruster meshes, with fallback on load failure. These are prototype calibration parameters rather than validated real-world Subaru values. Flight/landing and control behavior require in-browser evaluation.
