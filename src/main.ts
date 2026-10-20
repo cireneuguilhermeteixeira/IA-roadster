@@ -49,7 +49,9 @@ const TARGET_UPRIGHT = new THREE.Quaternion().setFromAxisAngle(UP, Math.PI);
 const MASS = 1450;
 const THRUST_MAX = 11000; // Newtons per thruster; 44 kN total > 14.2 kN vehicle weight.
 const THRUST_RESPONSE = 5; // 1/s
-const GIMBAL_RESPONSE = 4; // 1/s
+const GIMBAL_RESPONSE = 4;
+// Presentation-time slow motion: physics gravity stays at -9.81 m/s².
+const SIMULATION_RATE = 0.55; // 1/s
 const IDENTITY = { x: 0, y: 0, z: 0, w: 1 };
 let world: RAPIER.World;
 let rigidBody: RAPIER.RigidBody;
@@ -99,7 +101,8 @@ function reset() {
   ui.status.textContent = "Pronto para percorrer a rampa.";
   ui.status.style.color = "#9bdcff";
   camera.position.set(52, 31, 47);
-  orbit.target.set(0, 23, 0);
+  orbit.target.copy(pos);
+  camera.position.copy(pos).add(new THREE.Vector3(12, 7, 12));
   if (rigidBody) {
     rigidBody.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
     rigidBody.setTranslation(vec3(pos), true);
@@ -109,6 +112,7 @@ function reset() {
   }
   for (const t of thrusters) {
     t.power = 0;
+    t.yaw.visible = false;
     t.yaw.rotation.set(0, 0, 0);
     t.tilt.rotation.set(0, 0, 0);
     t.exhaust.visible = false;
@@ -161,7 +165,7 @@ addEventListener("blur", () => {
 function axis(positive: string, negative: string) {
   return Number(!!keys[positive]) - Number(!!keys[negative]);
 }
-const worldAcceleration = new THREE.Vector3();
+
 
 function desiredTorques() {
   // Torques in N*m, expressed in vehicle-local coordinates.
@@ -252,6 +256,7 @@ function simulate(dt: number) {
     syncBody();
     if (trackDistance >= trackLength) {
       mode = "flight";
+      thrusters.forEach((thruster) => { thruster.yaw.visible = true; });
       rigidBody.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
       // Preserve launch velocity along the tangent of the inverted exit.
       rigidBody.setLinvel({x:23 * Math.cos(angle),y:23 * Math.sin(angle),z:0}, true);
@@ -296,6 +301,7 @@ function simulate(dt: number) {
   // Ground and ramp contacts handled by Rapier colliders. No position teleporting.
   if (pos.y < -12) {
     mode = "landed";
+    thrusters.forEach((thruster) => { thruster.yaw.visible = false; });
     ui.status.textContent = "Fora dos limites da simulação. Reinicie para tentar novamente.";
   }
 }
@@ -319,7 +325,7 @@ const FIXED = 1 / 120;
 function frame() {
   requestAnimationFrame(frame);
   const dt = Math.min(clock.getDelta(), 0.05);
-  accumulator += dt;
+  accumulator += dt * SIMULATION_RATE;
   while (accumulator >= FIXED) {
     simulate(FIXED);
     accumulator -= FIXED;
@@ -335,10 +341,11 @@ function frame() {
   ui.percent.textContent = `${Math.round(throttle * 100)}%`;
   ui.throttleValue.textContent = `${Math.round(throttle * 100)}%`;
   ui.power.style.width = `${Math.round(throttle * 100)}%`;
-  if (follow && mode === "flight") {
-    const desired = new THREE.Vector3(13, 8, 19).add(pos);
-    camera.position.lerp(desired, Math.min(1, 2.1 * dt));
-    orbit.target.lerp(pos, Math.min(1, 3 * dt));
+  if (follow && mode !== "ready") {
+    // Move the camera by the target delta, preserving the distance chosen by wheel zoom.
+    const delta = pos.clone().sub(orbit.target);
+    camera.position.add(delta);
+    orbit.target.copy(pos);
   }
   orbit.update();
   renderer.render(scene, camera);

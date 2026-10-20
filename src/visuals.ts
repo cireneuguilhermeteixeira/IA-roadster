@@ -28,8 +28,11 @@ export function createVisuals(view: HTMLElement) {
   view.appendChild(renderer.domElement);
   const orbit = new OrbitControls(camera, renderer.domElement);
   orbit.enableDamping = true;
-  orbit.maxDistance = 140;
-  orbit.minDistance = 4;
+  orbit.maxDistance = 110;
+  orbit.minDistance = 1.8;
+  orbit.enableZoom = true;
+  orbit.zoomSpeed = 1.25;
+  orbit.enablePan = true;
   orbit.target.set(0, 23, 0);
   scene.add(new THREE.HemisphereLight(0xf7ead0, 0x7d654d, 2.0));
   const sun = new THREE.DirectionalLight(0xffe1b0, 2.9);
@@ -368,10 +371,12 @@ export function createVisuals(view: HTMLElement) {
   // Four gimballed jets: local down = thrust reaction along vehicle up.
   const thrusters = [];
   const jetMounts: { tilt: THREE.Group; fallbackJet: THREE.Group }[] = [];
-  for (const x of [-1.8, 1.8])
-    for (const z of [-1.08, 1.08]) {
+  for (const x of [-1.76, 1.76])
+    for (const z of [-1.1, 1.1]) {
       const yaw = new THREE.Group();
-      yaw.position.set(x, -0.1, z);
+      // Thrusters align with the wheel axle centers; visual jet mounts deploy only in flight.
+      yaw.position.set(x, 0.17, z);
+      yaw.visible = false;
       body.add(yaw);
       const tilt = new THREE.Group();
       yaw.add(tilt);
@@ -408,7 +413,7 @@ export function createVisuals(view: HTMLElement) {
     const bounds = new THREE.Box3().setFromObject(original);
     const size = bounds.getSize(new THREE.Vector3());
     const center = bounds.getCenter(new THREE.Vector3());
-    const scale = 0.75 / Math.max(size.x, size.y, size.z, 0.001);
+    const scale = 0.65 / Math.max(size.x, size.y, size.z, 0.001);
     for (const mount of jetMounts) {
       const model = original.clone(true);
       model.position.sub(center);

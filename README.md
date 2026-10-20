@@ -34,3 +34,7 @@ Small optimized 3D environment with fewer, larger foreground vegetation objects 
 ## Rigid-body simulation
 
 The free-flight integration uses Rapier 3D (WASM) with a 1450 kg chassis, calibrated principal inertias (690/3050/2800 kg·m²), 11 kN peak thrust per nozzle, finite actuator response and per-corner `addForceAtPoint`. The kinematic scripted half-loop is retained; the car is switched to a dynamic rigid body on launch. The supplied `jetpack_propulsor.glb` replaces procedural thruster meshes, with fallback on load failure. These are prototype calibration parameters rather than validated real-world Subaru values. Flight/landing and control behavior require in-browser evaluation.
+
+## Gameplay & camera refinements
+
+Jetpack meshes are attached at axle/wheel coordinates and remain hidden while on the track; they deploy when the vehicle is released. The viewport uses 0.55× simulation-time slow motion for a readable recovery window **without changing the physical gravity constant**. Follow-camera tracking preserves the user's zoom distance and pans the camera with the car. Rapier owns integration, gravity and collisions, while the remaining code implements input, PD control, actuator limits, visualization and scripted ramp motion. The flight mechanics remain experimental and require in-browser tuning. For correct collision-on-landing detection, vehicle contact events and ramp colliders still need integration.
