@@ -12,3 +12,6 @@ For public redistribution, follow the actual model license and attribution requi
 
 
 "2002 Subaru Impreza WRX STi Extreme" (https://skfb.ly/pBTED) by SIU Car Garage is licensed under Creative Commons Attribution-NonCommercial (http://creativecommons.org/licenses/by-nc/4.0/).
+
+
+"Jetpack propulsor" (https://skfb.ly/pu98M) by astronix is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
