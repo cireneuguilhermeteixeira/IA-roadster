@@ -1,14 +1,15 @@
 {
-  "name": "roadster-hover-lab",
+  "name": "vectormind",
   "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "lint": "eslint . && prettier --check index.html src README.md package.json eslint.config.js",
-    "format": "prettier --write index.html src README.md package.json eslint.config.js"
+    "lint": "eslint .",
+    "format": "prettier --write index.html src README.md package.json eslint.config.js",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "three": "^0.180.0"
@@ -16,7 +17,8 @@
   "devDependencies": {
     "eslint": "^10.13.0",
     "prettier": "^3.9.10",
-    "vite": "^7.1.0"
-  },
-  "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
+    "vite": "^7.1.0",
+    "typescript": "^5.9.3",
+    "@types/three": "^0.180.0"
+  }
 }
