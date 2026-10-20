@@ -10,12 +10,7 @@ export function createVisuals(view: HTMLElement) {
   // Avoid skybox discoloration by linear fog compositing into a flat color.
   scene.fog = null;
   setupSkybox(scene);
-  const camera = new THREE.PerspectiveCamera(
-    58,
-    innerWidth / innerHeight,
-    0.1,
-    1200,
-  );
+  const camera = new THREE.PerspectiveCamera(58, innerWidth / innerHeight, 0.1, 1200);
   camera.position.set(52, 31, 47);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
@@ -122,8 +117,7 @@ export function createVisuals(view: HTMLElement) {
     landingZ = 0;
   const rampLandingHeight = RAMP_FLOOR + 0.36;
   function landingSurfaceAt(x, z) {
-    const overEntry =
-      x >= -ENTRY_LENGTH && x <= 0 && Math.abs(z) <= ROAD_WIDTH / 2;
+    const overEntry = x >= -ENTRY_LENGTH && x <= 0 && Math.abs(z) <= ROAD_WIDTH / 2;
     return overEntry ? rampLandingHeight : 0.67;
   }
   const landingRing = addMesh(
@@ -156,21 +150,14 @@ export function createVisuals(view: HTMLElement) {
         nx = -Math.sin(angle),
         ny = Math.cos(angle);
       for (const z of [offset - width / 2, offset + width / 2])
-        vertices.push(
-          point.x + nx * normalOffset,
-          point.y + ny * normalOffset,
-          z,
-        );
+        vertices.push(point.x + nx * normalOffset, point.y + ny * normalOffset, z);
       if (i < segments) {
         const k = i * 2;
         indices.push(k, k + 1, k + 2, k + 1, k + 3, k + 2);
       }
     }
     const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute(
-      "position",
-      new THREE.Float32BufferAttribute(vertices, 3),
-    );
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
     const surface = addMesh(geometry, material, ramp);
@@ -194,19 +181,16 @@ export function createVisuals(view: HTMLElement) {
     ramp.add(rib);
     addBox(rib, 1.15, 0.35, ROAD_WIDTH + 0.32, ribMat, 0, -0.22, 0);
   }
-  for (const d of [4, ENTRY_LENGTH / 2, ENTRY_LENGTH - 2, ENTRY_LENGTH + arcLength - 2, trackLength - 2]) {
+  for (const d of [
+    4,
+    ENTRY_LENGTH / 2,
+    ENTRY_LENGTH - 2,
+    ENTRY_LENGTH + arcLength - 2,
+    trackLength - 2,
+  ]) {
     const { point } = trackAt(d);
     for (const z of [-ROAD_WIDTH / 2 + 0.4, ROAD_WIDTH / 2 - 0.4])
-      addBox(
-        scene,
-        0.34,
-        point.y - 0.25,
-        0.34,
-        ribMat,
-        point.x,
-        (point.y - 0.25) / 2,
-        z,
-      );
+      addBox(scene, 0.34, point.y - 0.25, 0.34, ribMat, point.x, (point.y - 0.25) / 2, z);
   }
   // Vehicle local X: front; Z: left/right. Its origin is near the center of mass.
   const vehicle = new THREE.Group();
@@ -228,20 +212,7 @@ export function createVisuals(view: HTMLElement) {
   const vertices = [],
     indices = [];
   for (const [x, top, width] of stations) {
-    vertices.push(
-      x,
-      top,
-      width,
-      x,
-      top,
-      -width,
-      x,
-      0.13,
-      width,
-      x,
-      0.13,
-      -width,
-    );
+    vertices.push(x, top, width, x, top, -width, x, 0.13, width, x, 0.13, -width);
   }
   for (let i = 0; i < stations.length - 1; i++) {
     const a = i * 4,
@@ -259,10 +230,7 @@ export function createVisuals(view: HTMLElement) {
   const end = (stations.length - 1) * 4;
   indices.push(end, end + 2, end + 3, end, end + 3, end + 1);
   const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute(
-    "position",
-    new THREE.Float32BufferAttribute(vertices, 3),
-  );
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(vertices, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
   addMesh(geometry, red, fallbackCar);
@@ -317,17 +285,9 @@ export function createVisuals(view: HTMLElement) {
         wheel,
       );
       rubber.rotation.x = Math.PI / 2;
-      const rim = addMesh(
-        new THREE.CylinderGeometry(0.3, 0.3, 0.297, 16),
-        chrome,
-        wheel,
-      );
+      const rim = addMesh(new THREE.CylinderGeometry(0.3, 0.3, 0.297, 16), chrome, wheel);
       rim.rotation.x = Math.PI / 2;
-      const hub = addMesh(
-        new THREE.CylinderGeometry(0.12, 0.12, 0.315, 16),
-        carbon,
-        wheel,
-      );
+      const hub = addMesh(new THREE.CylinderGeometry(0.12, 0.12, 0.315, 16), carbon, wheel);
       hub.rotation.x = Math.PI / 2;
     }
   const subaru = new THREE.Group();
@@ -371,8 +331,8 @@ export function createVisuals(view: HTMLElement) {
   // Four gimballed jets: local down = thrust reaction along vehicle up.
   const thrusters = [];
   const jetMounts: { tilt: THREE.Group; fallbackJet: THREE.Group }[] = [];
-  for (const x of [-1.76, 1.76])
-    for (const z of [-1.1, 1.1]) {
+  for (const x of [-1.56, 1.56])
+    for (const z of [-0.7, 0.7]) {
       const yaw = new THREE.Group();
       // Thrusters align with the wheel axle centers; visual jet mounts deploy only in flight.
       yaw.position.set(x, 0.17, z);
@@ -407,27 +367,32 @@ export function createVisuals(view: HTMLElement) {
       tilt.add(light);
       thrusters.push({ x, z, yaw, tilt, exhaust, light, power: 0 });
     }
-  loader.load("/models/jetpack_propulsor.glb", (gltf) => {
-    const original = gltf.scene;
-    original.updateMatrixWorld(true);
-    const bounds = new THREE.Box3().setFromObject(original);
-    const size = bounds.getSize(new THREE.Vector3());
-    const center = bounds.getCenter(new THREE.Vector3());
-    const scale = 0.65 / Math.max(size.x, size.y, size.z, 0.001);
-    for (const mount of jetMounts) {
-      const model = original.clone(true);
-      model.position.sub(center);
-      const pivot = new THREE.Group();
-      pivot.position.y = -0.37;
-      pivot.scale.setScalar(scale);
-      pivot.add(model);
-      mount.tilt.add(pivot);
-      mount.fallbackJet.visible = false;
-      model.traverse((child) => {
-        if (child instanceof THREE.Mesh) child.castShadow = true;
-      });
-    }
-  }, undefined, (error) => console.warn("Jetpack asset load failed, using fallback.", error));
+  loader.load(
+    "/models/jetpack_propulsor.glb",
+    (gltf) => {
+      const original = gltf.scene;
+      original.updateMatrixWorld(true);
+      const bounds = new THREE.Box3().setFromObject(original);
+      const size = bounds.getSize(new THREE.Vector3());
+      const center = bounds.getCenter(new THREE.Vector3());
+      const scale = 0.65 / Math.max(size.x, size.y, size.z, 0.001);
+      for (const mount of jetMounts) {
+        const model = original.clone(true);
+        model.position.sub(center);
+        const pivot = new THREE.Group();
+        pivot.position.y = -0.37;
+        pivot.scale.setScalar(scale);
+        pivot.add(model);
+        mount.tilt.add(pivot);
+        mount.fallbackJet.visible = false;
+        model.traverse((child) => {
+          if (child instanceof THREE.Mesh) child.castShadow = true;
+        });
+      }
+    },
+    undefined,
+    (error) => console.warn("Jetpack asset load failed, using fallback.", error),
+  );
   return {
     scene,
     camera,

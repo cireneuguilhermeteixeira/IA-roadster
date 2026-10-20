@@ -15,47 +15,43 @@
         <div class="stats">
           <div class="stat"><small>ALTITUDE</small><b id="alt">0 m</b></div>
           <div class="stat"><small>ATITUDE</small><b id="att">0°</b></div>
-          <div class="stat">
-            <small>VEL. VERTICAL</small><b id="speed">0 m/s</b>
-          </div>
+          <div class="stat"><small>VEL. VERTICAL</small><b id="speed">0 m/s</b></div>
         </div>
 
         <div class="status" id="status">Pronto para percorrer a rampa.</div>
         <div class="controls">
           <button class="primary" id="launch">ACELERAR NA RAMPA</button>
           <button id="reset">REINICIAR</button>
-          <button id="auto">ESTABILIZAÇÃO: OFF</button>
+          <button id="auto">ESTABILIZAÇÃO: ON</button>
           <button id="camera">CÂMERA: SEGUIR</button>
         </div>
 
         <div class="section">
-          <strong>Potência dos quatro propulsores</strong>
-          <span id="percent" class="tag">50%</span>
+          <strong>Potência máxima dos quatro propulsores</strong>
+          <span id="percent" class="tag">100%</span>
           <div class="bar"><span id="powerbar"></span></div>
           <div class="row">
-            <span>Potência</span>
-            <input id="throttle" type="range" min="0" max="100" value="50" />
-            <span id="throttleValue">50%</span>
+            <span>Limite</span>
+            <input id="throttle" type="range" min="0" max="100" value="100" />
+            <span id="throttleValue">100%</span>
           </div>
         </div>
 
         <div class="section">
           <strong>Comandos</strong>
           <div class="hint">
-            <strong>W / S</strong> inclinar nariz · <strong>A / D</strong> rolar
-            · <strong>Q / E</strong> guinar<br />
-            <strong>↑ / ↓</strong> vetorizar para frente/trás ·
-            <strong>← / →</strong> vetorizar lateralmente<br />
-            <strong>Shift</strong> impulso máximo ·
-            <strong>T</strong> estabilização automática ·
-            <strong>R</strong> reiniciar<br />
-            <strong>Mouse</strong> orbitar/zoom. O carro percorre a rampa curva
-            fixa e sai invertido no topo.
+            <strong>W / S</strong> inclinar nariz · <strong>A / D</strong> rolar ·
+            <strong>Q / E</strong> guinar<br />
+            <strong>↑ / ↓</strong> vetorizar para frente/trás · <strong>← / →</strong> vetorizar
+            lateralmente<br />
+            <strong>T</strong> estabilização automática · <strong>R</strong> reiniciar<br />
+            <strong>Mouse</strong> orbitar/zoom. O carro percorre a rampa curva fixa e sai invertido
+            no topo.
           </div>
         </div>
         <div class="section warning">
-          Carroceria Subaru 2002 (GLB opcional; fallback procedural). Simulação de voo recreativa, sem
-          representar um sistema real de propulsão.
+          Carroceria Subaru 2002 (GLB opcional; fallback procedural). Simulação de voo recreativa,
+          sem representar um sistema real de propulsão.
         </div>
       </aside>
       <div class="bottom">THREE.JS · RAMPA PROCEDURAL · PROPULSÃO VETORIAL</div>
