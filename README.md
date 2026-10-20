@@ -27,6 +27,6 @@ The existing simulator implements simplified numerical flight dynamics rather th
 
 Subaru model: attribution and license details must be added after obtaining the model from its creator. No third-party 3D mesh is included in this repository.
 
-## Caatinga scene
+## Environment
 
-Procedural scenery inspired by interior Ceará, including carnaúba palms, mandacaru cacti, dry trees, sandy soil and rocks. The ramp returns to its original dimensions and uses natural-colored materials. The vegetation is decorative and has no colliders.
+Small optimized 3D environment with fewer, larger foreground vegetation objects and a seamless 360° equirectangular sunset panorama (`public/textures/sunset-panorama.svg`) for distant mountains and sky. No geometry is used for distant mountains. The panorama is an original lightweight SVG image and can be replaced with an HDRI or PNG of 2:1 aspect ratio. The flight simulation and ramp dimensions are unchanged.
