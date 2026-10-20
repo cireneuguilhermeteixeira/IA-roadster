@@ -5,8 +5,8 @@ import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 export function createVisuals(view: HTMLElement) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#d8bf94");
-  scene.fog = new THREE.FogExp2("#cbb28c", 0.0023);
+  scene.background = new THREE.Color("#d7d8c8");
+  scene.fog = new THREE.FogExp2("#c8bfaa", 0.0022);
   const camera = new THREE.PerspectiveCamera(
     58,
     innerWidth / innerHeight,
@@ -28,9 +28,9 @@ export function createVisuals(view: HTMLElement) {
   orbit.maxDistance = 140;
   orbit.minDistance = 4;
   orbit.target.set(0, 23, 0);
-  scene.add(new THREE.HemisphereLight(0xffe5bf, 0x80644e, 2.1));
-  const sun = new THREE.DirectionalLight(0xffe0ae, 3.1);
-  sun.position.set(-75, 90, 45);
+  scene.add(new THREE.HemisphereLight(0xf7ead0, 0x7d654d, 2.0));
+  const sun = new THREE.DirectionalLight(0xffe1b0, 2.9);
+  sun.position.set(-55, 85, 35);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = -90;
@@ -81,11 +81,11 @@ export function createVisuals(view: HTMLElement) {
   ground.receiveShadow = true;
   createCaatinga(scene);
   // A fixed half-loop: the road itself bends upward until its exit is upside down.
-  const RAMP_RADIUS = 28,
+  const RAMP_RADIUS = 20,
     RAMP_FLOOR = 0,
     RAMP_TOP = RAMP_FLOOR + 2 * RAMP_RADIUS;
-  const ENTRY_LENGTH = 55,
-    EXIT_LENGTH = 24,
+  const ENTRY_LENGTH = 28,
+    EXIT_LENGTH = 12,
     ROAD_WIDTH = 9;
   const arcLength = Math.PI * RAMP_RADIUS,
     trackLength = ENTRY_LENGTH + arcLength + EXIT_LENGTH;
@@ -123,7 +123,7 @@ export function createVisuals(view: HTMLElement) {
   const landingRing = addMesh(
     new THREE.RingGeometry(2.9, 3.08, 64),
     new THREE.MeshBasicMaterial({
-      color: "#5edcff",
+      color: "#e6c58c",
       transparent: true,
       opacity: 0.65,
       side: THREE.DoubleSide,
@@ -138,15 +138,13 @@ export function createVisuals(view: HTMLElement) {
   landingRing.castShadow = false;
   const ramp = new THREE.Group();
   scene.add(ramp);
-  const deckMat = standardMaterial("#57768e", 0.35, 0.55),
-    edgeMat = new THREE.MeshBasicMaterial({ color: "#61dfff" }),
-    stripeMat = new THREE.MeshBasicMaterial({ color: "#d5eafa" });
-  deckMat.emissive.set("#3c7591");
-  deckMat.emissiveIntensity = 0.48;
+  const deckMat = standardMaterial("#8b6a4d", 0.08, 0.95),
+    edgeMat = standardMaterial("#c9b38e", 0.04, 0.92),
+    stripeMat = standardMaterial("#e6d5b5", 0.02, 0.9);
   function roadRibbon(offset, width, normalOffset, material) {
     const vertices = [],
       indices = [],
-      segments = 300;
+      segments = 180;
     for (let i = 0; i <= segments; i++) {
       const { point, angle } = trackAt((trackLength * i) / segments),
         nx = -Math.sin(angle),
@@ -181,9 +179,7 @@ export function createVisuals(view: HTMLElement) {
     roadRibbon(z, 0.12, -0.32, standardMaterial("#27435b", 0.2, 0.6));
   }
   // Thick ribs and columns make the curve legible from the side.
-  const ribMat = standardMaterial("#3b5367", 0.4, 0.58);
-  ribMat.emissive.set("#1f4057");
-  ribMat.emissiveIntensity = 0.3;
+  const ribMat = standardMaterial("#6d523f", 0.08, 0.96);
   for (let d = 0; d <= trackLength; d += 3.5) {
     const { point, angle } = trackAt(d),
       rib = new THREE.Group();
@@ -206,9 +202,6 @@ export function createVisuals(view: HTMLElement) {
         z,
       );
   }
-  const underglow = new THREE.PointLight("#2bbafa", 10, 18);
-  underglow.position.set(0, RAMP_TOP - 4, 0);
-  scene.add(underglow);
   // Vehicle local X: front; Z: left/right. Its origin is near the center of mass.
   const vehicle = new THREE.Group();
   scene.add(vehicle);
@@ -350,7 +343,8 @@ export function createVisuals(view: HTMLElement) {
       const container = new THREE.Group();
       container.add(model);
       container.scale.setScalar(factor);
-      if (lengthAlongZ) container.rotation.y = -Math.PI / 2;
+      // Face the Subaru into the half-loop (+X travel direction).
+      container.rotation.y = lengthAlongZ ? Math.PI / 2 : Math.PI;
       subaru.add(container);
       // Position the center of the model close to the simulation's physical origin.
       subaru.position.y = 0.75;
