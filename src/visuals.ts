@@ -1,11 +1,12 @@
+import { createCaatinga } from "./caatinga";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 export function createVisuals(view: HTMLElement) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#0c1928");
-  scene.fog = new THREE.FogExp2("#0c1928", 0.004);
+  scene.background = new THREE.Color("#d8bf94");
+  scene.fog = new THREE.FogExp2("#cbb28c", 0.0023);
   const camera = new THREE.PerspectiveCamera(
     58,
     innerWidth / innerHeight,
@@ -27,9 +28,9 @@ export function createVisuals(view: HTMLElement) {
   orbit.maxDistance = 140;
   orbit.minDistance = 4;
   orbit.target.set(0, 23, 0);
-  scene.add(new THREE.HemisphereLight(0xb8d9ff, 0x222633, 2.2));
-  const sun = new THREE.DirectionalLight(0xffffff, 2.8);
-  sun.position.set(0, 90, 0);
+  scene.add(new THREE.HemisphereLight(0xffe5bf, 0x80644e, 2.1));
+  const sun = new THREE.DirectionalLight(0xffe0ae, 3.1);
+  sun.position.set(-75, 90, 45);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = -90;
@@ -70,7 +71,7 @@ export function createVisuals(view: HTMLElement) {
     addMesh(new THREE.BoxGeometry(w, h, d), m, p, x, y, z);
   const ground = addMesh(
     new THREE.PlaneGeometry(1000, 1000),
-    standardMaterial("#121d29", 0.08, 0.86),
+    standardMaterial("#a7784d", 0.02, 0.98),
     scene,
     0,
     -0.03,
@@ -78,32 +79,13 @@ export function createVisuals(view: HTMLElement) {
   );
   ground.rotation.x = -Math.PI / 2;
   ground.receiveShadow = true;
-  const grid = new THREE.GridHelper(500, 100, 0x30425b, 0x1c2938);
-  grid.position.y = 0.015;
-  scene.add(grid);
-  for (let i = 0; i < 42; i++) {
-    const x = ((i % 7) - 3) * 24,
-      z = (Math.floor(i / 7) - 3) * 24;
-    if (Math.abs(x) < 35 && Math.abs(z) < 35) continue;
-    const h = 3 + ((i * 17) % 11);
-    const b = addBox(
-      scene,
-      5,
-      h,
-      5,
-      standardMaterial("#141e29", 0.05, 0.85),
-      x,
-      h / 2,
-      z,
-    );
-    b.castShadow = false;
-  }
+  createCaatinga(scene);
   // A fixed half-loop: the road itself bends upward until its exit is upside down.
-  const RAMP_RADIUS = 20,
+  const RAMP_RADIUS = 28,
     RAMP_FLOOR = 0,
     RAMP_TOP = RAMP_FLOOR + 2 * RAMP_RADIUS;
-  const ENTRY_LENGTH = 28,
-    EXIT_LENGTH = 12,
+  const ENTRY_LENGTH = 55,
+    EXIT_LENGTH = 24,
     ROAD_WIDTH = 9;
   const arcLength = Math.PI * RAMP_RADIUS,
     trackLength = ENTRY_LENGTH + arcLength + EXIT_LENGTH;
@@ -164,7 +146,7 @@ export function createVisuals(view: HTMLElement) {
   function roadRibbon(offset, width, normalOffset, material) {
     const vertices = [],
       indices = [],
-      segments = 180;
+      segments = 300;
     for (let i = 0; i <= segments; i++) {
       const { point, angle } = trackAt((trackLength * i) / segments),
         nx = -Math.sin(angle),
@@ -210,7 +192,7 @@ export function createVisuals(view: HTMLElement) {
     ramp.add(rib);
     addBox(rib, 1.15, 0.35, ROAD_WIDTH + 0.32, ribMat, 0, -0.22, 0);
   }
-  for (const d of [4, 15, 26, ENTRY_LENGTH + arcLength - 2, trackLength - 2]) {
+  for (const d of [4, ENTRY_LENGTH / 2, ENTRY_LENGTH - 2, ENTRY_LENGTH + arcLength - 2, trackLength - 2]) {
     const { point } = trackAt(d);
     for (const z of [-ROAD_WIDTH / 2 + 0.4, ROAD_WIDTH / 2 - 0.4])
       addBox(
@@ -353,7 +335,7 @@ export function createVisuals(view: HTMLElement) {
   body.add(subaru);
   const loader = new GLTFLoader();
   loader.load(
-    "/models/subaru-2002.glb",
+    "/models/2002_subaru_impreza_wrx_sti_extreme.glb",
     (gltf) => {
       const model = gltf.scene;
       model.updateMatrixWorld(true);
@@ -363,7 +345,7 @@ export function createVisuals(view: HTMLElement) {
       // Most glTF exports point along -Z. Convert that longitudinal axis to +X.
       const lengthAlongZ = dimensions.z > dimensions.x;
       const longitudinalSize = lengthAlongZ ? dimensions.z : dimensions.x;
-      const factor = 5.35 / Math.max(longitudinalSize, 0.001);
+      const factor = 4.5 / Math.max(longitudinalSize, 0.001);
       model.position.sub(center);
       const container = new THREE.Group();
       container.add(model);
@@ -371,7 +353,7 @@ export function createVisuals(view: HTMLElement) {
       if (lengthAlongZ) container.rotation.y = -Math.PI / 2;
       subaru.add(container);
       // Position the center of the model close to the simulation's physical origin.
-      subaru.position.y = 0.65;
+      subaru.position.y = 0.75;
       subaru.traverse((object) => {
         if (object instanceof THREE.Mesh) {
           object.castShadow = true;
