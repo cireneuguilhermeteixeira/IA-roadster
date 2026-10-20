@@ -1,12 +1,15 @@
 import { createCaatinga } from "./caatinga";
+import { setupSkybox } from "./skybox";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
 export function createVisuals(view: HTMLElement) {
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color("#d7d8c8");
-  scene.fog = new THREE.FogExp2("#c8bfaa", 0.0022);
+  scene.background = new THREE.Color("#cfaa82");
+  // Avoid skybox discoloration by linear fog compositing into a flat color.
+  scene.fog = null;
+  setupSkybox(scene);
   const camera = new THREE.PerspectiveCamera(
     58,
     innerWidth / innerHeight,
@@ -15,7 +18,7 @@ export function createVisuals(view: HTMLElement) {
   );
   camera.position.set(52, 31, 47);
   const renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));
   renderer.setSize(innerWidth, innerHeight);
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -32,11 +35,11 @@ export function createVisuals(view: HTMLElement) {
   const sun = new THREE.DirectionalLight(0xffe1b0, 2.9);
   sun.position.set(-55, 85, 35);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
-  sun.shadow.camera.left = -90;
-  sun.shadow.camera.right = 90;
-  sun.shadow.camera.top = 90;
-  sun.shadow.camera.bottom = -90;
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.camera.left = -55;
+  sun.shadow.camera.right = 55;
+  sun.shadow.camera.top = 70;
+  sun.shadow.camera.bottom = -55;
   scene.add(sun);
   const standardMaterial = (color, metalness = 0.1, roughness = 0.5) =>
     new THREE.MeshStandardMaterial({ color, metalness, roughness });
@@ -70,7 +73,7 @@ export function createVisuals(view: HTMLElement) {
   const addBox = (p, w, h, d, m, x = 0, y = 0, z = 0) =>
     addMesh(new THREE.BoxGeometry(w, h, d), m, p, x, y, z);
   const ground = addMesh(
-    new THREE.PlaneGeometry(1000, 1000),
+    new THREE.PlaneGeometry(230, 230),
     standardMaterial("#a7784d", 0.02, 0.98),
     scene,
     0,
