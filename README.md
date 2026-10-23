@@ -31,7 +31,7 @@ Open the app with `?reactors=off` to test a ballistic flight with all four react
 The Subaru and four jetpack visuals are loaded from GLB files under `public/models`. See the upstream model's distribution license before reuse.
 
 
-<img width="364" height="335" alt="image" src="https://github.com/user-attachments/assets/d1f3c4b5-132a-4e8c-ad3f-3b4fa5a3d0fc" />
+<img width="364" height="335" alt="image" src="https://s2.ezgif.com/tmp/ezgif-236d574a45523aa1.gif" />
 
 <img width="1365" height="607" alt="image" src="https://github.com/user-attachments/assets/db8bdea4-62d7-493d-92d9-dd20ff07a05a" />
 
