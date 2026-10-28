@@ -1,5 +1,6 @@
 import { createCaatinga } from "./caatinga";
 import { setupSkybox } from "./skybox";
+import { THRUSTER_X, THRUSTER_Z } from "./physics";
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
@@ -116,10 +117,6 @@ export function createVisuals(view: HTMLElement) {
   const landingX = trackAt(trackLength).point.x,
     landingZ = 0;
   const rampLandingHeight = RAMP_FLOOR + 0.36;
-  function landingSurfaceAt(x, z) {
-    const overEntry = x >= -ENTRY_LENGTH && x <= 0 && Math.abs(z) <= ROAD_WIDTH / 2;
-    return overEntry ? rampLandingHeight : 0.67;
-  }
   const landingRing = addMesh(
     new THREE.RingGeometry(2.9, 3.08, 64),
     new THREE.MeshBasicMaterial({
@@ -331,8 +328,8 @@ export function createVisuals(view: HTMLElement) {
   // Four gimballed jets: local down = thrust reaction along vehicle up.
   const thrusters = [];
   const jetMounts: { tilt: THREE.Group; fallbackJet: THREE.Group }[] = [];
-  for (const x of [-1.56, 1.56])
-    for (const z of [-0.7, 0.7]) {
+  for (const x of [-THRUSTER_X, THRUSTER_X])
+    for (const z of [-THRUSTER_Z, THRUSTER_Z]) {
       const yaw = new THREE.Group();
       // Thrusters align with the wheel axle centers; visual jet mounts deploy only in flight.
       yaw.position.set(x, 0.17, z);

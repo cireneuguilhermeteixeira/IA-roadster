@@ -1,8 +1,26 @@
 // Handwritten feed-forward MLP. No ML framework or external dependency.
 export const SHAPE = [18, 24, 16, 12] as const;
-export const WEIGHT_COUNT = SHAPE.slice(1).reduce((sum, n, index) => sum + n * (SHAPE[index] + 1), 0);
+export const WEIGHT_COUNT = SHAPE.slice(1).reduce(
+  (sum, n, index) => sum + n * (SHAPE[index] + 1),
+  0,
+);
 export type Trace = { layers: number[][]; outputs: number[] };
 export type Genome = number[];
+
+/** The old last sensor was always 1. Move its weights into the trainable
+ * neuron biases, leaving the new contact sensor neutral until it evolves. */
+export function migrateLegacyBiasSensor(genome: Genome): Genome {
+  if (genome.length !== WEIGHT_COUNT) throw new Error("Invalid genome length");
+  const migrated = genome.slice();
+  const stride = SHAPE[0] + 1;
+  for (let neuron = 0; neuron < SHAPE[1]; neuron++) {
+    const bias = neuron * stride;
+    const oldConstantInput = bias + SHAPE[0];
+    migrated[bias] += migrated[oldConstantInput];
+    migrated[oldConstantInput] = 0;
+  }
+  return migrated;
+}
 
 export function randomGenome(random: () => number = Math.random): Genome {
   return Array.from({ length: WEIGHT_COUNT }, () => (random() * 2 - 1) * 0.48);
@@ -10,7 +28,9 @@ export function randomGenome(random: () => number = Math.random): Genome {
 export function forward(genome: Genome, sensors: number[]): Trace {
   if (genome.length !== WEIGHT_COUNT || sensors.length !== SHAPE[0])
     throw new Error("Neural network dimensions do not match the saved checkpoint.");
-  const layers: number[][] = [sensors.map((v) => Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0)];
+  const layers: number[][] = [
+    sensors.map((v) => (Number.isFinite(v) ? Math.max(-1, Math.min(1, v)) : 0)),
+  ];
   let offset = 0;
   for (let layer = 1; layer < SHAPE.length; layer++) {
     const previous = layers[layer - 1];
@@ -26,9 +46,9 @@ export function forward(genome: Genome, sensors: number[]): Trace {
   return { layers, outputs: layers[layers.length - 1] };
 }
 export function decode(outputs: number[]) {
-  return Array.from({length:4}, (_,i) => ({
+  return Array.from({ length: 4 }, (_, i) => ({
     power: Math.max(0, Math.min(1, (outputs[i] + 1) / 2)),
-    tiltX: outputs[4+i] * 0.65,
-    tiltZ: outputs[8+i] * 0.65,
+    tiltX: outputs[4 + i] * 0.65,
+    tiltZ: outputs[8 + i] * 0.65,
   }));
 }
