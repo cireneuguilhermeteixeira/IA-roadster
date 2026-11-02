@@ -162,8 +162,8 @@ pilotButton.onclick = () => {
 };
 // JSON export/import moves a checkpoint between browsers or sessions.
 exportButton.onclick = () => {
-  if (trainer.champion) trainer.exportJSON();
-  else ui.status.textContent = "Ainda não existe um cérebro treinado para exportar.";
+  if (trainer.champion && Number.isFinite(trainer.bestFitness)) trainer.exportJSON();
+  else ui.status.textContent = "Aguarde uma geração para pontuar o DNA com as regras atuais.";
 };
 importButton.onclick = () => importFile.click();
 // Imported JSON is checked by EvolutionTrainer before replacing its candidates.

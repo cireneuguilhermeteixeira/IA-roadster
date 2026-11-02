@@ -39,3 +39,6 @@ The Subaru and four jetpack visuals are loaded from GLB files under `public/mode
 
 
 "Jetpack propulsor" (https://skfb.ly/pu98M) by astronix is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+
+
+https://youtu.be/VUOdr357auE

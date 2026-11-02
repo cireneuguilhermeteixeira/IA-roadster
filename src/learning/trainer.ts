@@ -35,8 +35,8 @@ const POST_CONTACT_SECONDS = 1.5;
 /** Yield the main thread after a short batch even when more physics work remains. */
 const TRAINING_BATCH_MS = 10;
 const MAX_STEPS_PER_BATCH = 512;
-/** Number of checkpoint-derived variants inserted when training resumes. */
-const RESUME_MUTANTS = Math.floor(POPULATION / 4);
+/** Most restarted candidates stay near saved champions; the rest remain novel. */
+const RESUME_MUTANTS = Math.floor(POPULATION * 0.75);
 /** Target and speed thresholds used by the diagnostics and stable-landing test. */
 const TARGET_RADIUS = 5;
 const GENTLE_VERTICAL_SPEED = 3;
@@ -53,9 +53,12 @@ function seedPopulation(seed: Genome, alternate?: Genome): Genome[] {
   for (let i = 1; i < RESUME_MUTANTS; i++) {
     if (i === 1 && alternate) continue;
     const source = alternate && i % 2 === 1 ? alternate : seed;
+    const local = i < RESUME_MUTANTS / 2;
+    const rate = local ? 0.008 : 0.02;
+    const scale = local ? 0.04 : 0.12;
     genomes[i] = source.map((weight) =>
       THREE.MathUtils.clamp(
-        weight + (Math.random() < 0.025 ? (Math.random() * 2 - 1) * 0.16 : 0),
+        weight + (Math.random() < rate ? (Math.random() * 2 - 1) * scale : 0),
         -4,
         4,
       ),
@@ -212,7 +215,7 @@ export class EvolutionTrainer {
     this.physics = new VehiclePhysics(ramp, trackAt, trackLength, this.thrusters, true);
     const checkpoint = loadCheckpoint();
     if (checkpoint) {
-      if (checkpoint.scoreVersion === 17) {
+      if (checkpoint.scoreVersion === 18) {
         this.generation = checkpoint.generation + 1;
         this.champion = checkpoint.champion.slice();
         this.bestFitness = checkpoint.bestFitness;
@@ -224,11 +227,13 @@ export class EvolutionTrainer {
         this.history.push(...checkpoint.history.slice(-200));
         this.genomes = seedPopulation(this.champion, this.brakingChampion ?? undefined);
       } else {
-        // Re-score the previous champion and nearby variants under the new reward.
-        this.genomes = seedPopulation(
-          previousGenome(checkpoint),
-          validGenome(checkpoint.brakingChampion) ? checkpoint.brakingChampion : undefined,
-        );
+        // Preserve the trained DNA and generation number, but re-score under v18.
+        this.generation = checkpoint.generation + 1;
+        this.champion = previousGenome(checkpoint);
+        this.brakingChampion = validGenome(checkpoint.brakingChampion)
+          ? checkpoint.brakingChampion.slice()
+          : null;
+        this.genomes = seedPopulation(this.champion, this.brakingChampion ?? undefined);
       }
     }
   }
@@ -545,8 +550,13 @@ export class EvolutionTrainer {
   private fitness(state: State, metrics: EpisodeMetrics) {
     const aligned = (value: number | null | undefined) =>
       THREE.MathUtils.clamp(((value ?? -1) + 1) / 2, 0, 1);
+    // Reward a gradual recovery before reaching the lower target zone. This is
+    // the same upright/descent behavior tracked by the purple and HUD metrics.
+    const recovery =
+      1200 * aligned(metrics.flightUpright) + 1600 * (metrics.controlledDescent ?? 0);
     // Hovering and accumulated turns are negative even if the eventual impact is good.
     const approach =
+      recovery +
       900 * (metrics.approachQuality ?? 0) -
       500 * (metrics.nearGroundHoverSeconds ?? 0) -
       350 * Math.min(5, metrics.turns);
@@ -561,7 +571,7 @@ export class EvolutionTrainer {
     // These terms use the measured state immediately before the first low contact.
     const impact =
       700 * Math.exp(-(metrics.distance ?? 100) / TARGET_RADIUS) +
-      1700 *
+      3000 *
         landingSpeedQuality(
           metrics.verticalSpeed ?? Infinity,
           metrics.horizontalSpeed ?? Infinity,
@@ -699,14 +709,15 @@ export class EvolutionTrainer {
   }
   /** Serialize only champions and recent history, not all 96 genomes or replays. */
   checkpoint(): Checkpoint {
-    if (!this.champion) throw new Error("No champion has been trained yet");
+    if (!this.champion || !Number.isFinite(this.bestFitness))
+      throw new Error("The champion has not been scored under the current rules yet");
     return {
       version: 1,
-      scoreVersion: 17,
+      scoreVersion: 18,
       shape: [...SHAPE],
       generation: this.generation - 1,
       champion: this.champion.slice(),
-      bestFitness: Number.isFinite(this.bestFitness) ? this.bestFitness : -1e6,
+      bestFitness: this.bestFitness,
       brakingChampion: this.brakingChampion?.slice(),
       bestBrakingScore: Number.isFinite(this.bestBrakingScore) ? this.bestBrakingScore : undefined,
       stagnantGenerations: this.stagnantGenerations,
@@ -732,7 +743,7 @@ export class EvolutionTrainer {
       !value.champion.every(Number.isFinite)
     )
       throw Error("Invalid genome");
-    if (value.scoreVersion === 17) {
+    if (value.scoreVersion === 18) {
       this.champion = value.champion.slice();
       this.bestFitness = value.bestFitness;
       this.brakingChampion = validGenome(value.brakingChampion)
@@ -744,17 +755,17 @@ export class EvolutionTrainer {
       this.history.splice(0, this.history.length, ...value.history.slice(-200));
       this.genomes = seedPopulation(this.champion, this.brakingChampion ?? undefined);
     } else {
-      this.champion = null;
+      // Keep older DNA available to the pilot while its score is re-evaluated.
+      this.champion = previousGenome(value);
       this.bestFitness = -Infinity;
-      this.brakingChampion = null;
+      this.brakingChampion = validGenome(value.brakingChampion)
+        ? value.brakingChampion.slice()
+        : null;
       this.bestBrakingScore = -Infinity;
       this.stagnantGenerations = 0;
-      this.generation = 1;
+      this.generation = value.generation + 1;
       this.history.length = 0;
-      this.genomes = seedPopulation(
-        previousGenome(value),
-        validGenome(value.brakingChampion) ? value.brakingChampion : undefined,
-      );
+      this.genomes = seedPopulation(this.champion, this.brakingChampion ?? undefined);
     }
     this.index = 0;
     this.results = [];
@@ -766,6 +777,6 @@ export class EvolutionTrainer {
     this.displaying = false;
     this.displayGeneration = 0;
     if (this.running) this.startEpisode();
-    if (this.champion) saveCheckpoint(this.checkpoint());
+    if (this.champion && Number.isFinite(this.bestFitness)) saveCheckpoint(this.checkpoint());
   }
 }

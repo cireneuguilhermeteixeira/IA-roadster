@@ -94,7 +94,7 @@ export type GenerationRecord = {
 export type Checkpoint = {
   /** File schema and scoring-rule version for safe resume/migration. */
   version: 1;
-  scoreVersion?: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17;
+  scoreVersion?: 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18;
   shape: number[];
   /** Last fully completed generation, archived champion DNA, and its record score. */
   generation: number;
