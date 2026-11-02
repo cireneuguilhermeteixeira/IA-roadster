@@ -5,7 +5,9 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
+/** Build the WebGL scene and return geometry, landmarks, and motor visuals to the app. */
 export function createVisuals(view: HTMLElement) {
+  // Scene owns visible meshes; camera, renderer, and orbit control only presentation.
   const scene = new THREE.Scene();
   scene.background = new THREE.Color("#cfaa82");
   // Avoid skybox discoloration by linear fog compositing into a flat color.
@@ -40,6 +42,7 @@ export function createVisuals(view: HTMLElement) {
   sun.shadow.camera.top = 70;
   sun.shadow.camera.bottom = -55;
   scene.add(sun);
+  // Shared material helpers keep procedural geometry compact and consistent.
   const standardMaterial = (color, metalness = 0.1, roughness = 0.5) =>
     new THREE.MeshStandardMaterial({ color, metalness, roughness });
   const red = new THREE.MeshPhysicalMaterial({
@@ -61,6 +64,7 @@ export function createVisuals(view: HTMLElement) {
     clearcoat: 1,
   });
   const neon = new THREE.MeshBasicMaterial({ color: "#64dfff" });
+  /** Create a shadow-enabled mesh at local coordinates under its parent. */
   const addMesh = (geo, material, parent, x = 0, y = 0, z = 0) => {
     const m = new THREE.Mesh(geo, material);
     m.position.set(x, y, z);
@@ -69,6 +73,7 @@ export function createVisuals(view: HTMLElement) {
     parent.add(m);
     return m;
   };
+  /** Shorthand for the many rigid decorative boxes in the ramp and car. */
   const addBox = (p, w, h, d, m, x = 0, y = 0, z = 0) =>
     addMesh(new THREE.BoxGeometry(w, h, d), m, p, x, y, z);
   const ground = addMesh(
@@ -83,6 +88,7 @@ export function createVisuals(view: HTMLElement) {
   ground.receiveShadow = true;
   createCaatinga(scene);
   // A fixed half-loop: the road itself bends upward until its exit is upside down.
+  // The road has a flat entry, half-loop, and inverted upper exit.
   const RAMP_RADIUS = 20,
     RAMP_FLOOR = 0,
     RAMP_TOP = RAMP_FLOOR + 2 * RAMP_RADIUS;
@@ -91,6 +97,7 @@ export function createVisuals(view: HTMLElement) {
     ROAD_WIDTH = 9;
   const arcLength = Math.PI * RAMP_RADIUS,
     trackLength = ENTRY_LENGTH + arcLength + EXIT_LENGTH;
+  /** Map traveled distance to a centerline point and tangent angle. */
   function trackAt(distance) {
     const d = THREE.MathUtils.clamp(distance, 0, trackLength);
     if (d <= ENTRY_LENGTH)
@@ -114,6 +121,7 @@ export function createVisuals(view: HTMLElement) {
       angle: Math.PI,
     };
   }
+  // The target is vertically below the upper exit, centered across the road.
   const landingX = trackAt(trackLength).point.x,
     landingZ = 0;
   const rampLandingHeight = RAMP_FLOOR + 0.36;
@@ -138,6 +146,7 @@ export function createVisuals(view: HTMLElement) {
   const deckMat = standardMaterial("#8b6a4d", 0.08, 0.95),
     edgeMat = standardMaterial("#c9b38e", 0.04, 0.92),
     stripeMat = standardMaterial("#e6d5b5", 0.02, 0.9);
+  /** Extrude a strip along the centerline; the deck strip also feeds Rapier. */
   function roadRibbon(offset, width, normalOffset, material) {
     const vertices = [],
       indices = [],
@@ -161,6 +170,7 @@ export function createVisuals(view: HTMLElement) {
     surface.material.side = THREE.DoubleSide;
     return surface;
   }
+  // Keep this indexed surface: VehiclePhysics reuses its triangles as a collider.
   const rampSurface = roadRibbon(0, ROAD_WIDTH, 0, deckMat);
   roadRibbon(0, 0.06, 0.065, stripeMat);
   for (const z of [-ROAD_WIDTH / 2, ROAD_WIDTH / 2]) {
@@ -195,8 +205,10 @@ export function createVisuals(view: HTMLElement) {
   const body = new THREE.Group();
   vehicle.add(body);
   // Keep an original procedural fallback until the licensed GLB is provided.
+  // Procedural geometry stays visible until the optional Subaru model loads.
   const fallbackCar = new THREE.Group();
   body.add(fallbackCar);
+  // Each station gives a longitudinal X position, roof height, and half-width.
   const stations = [
     [-2.65, 0.64, 0.78],
     [-2.0, 0.94, 1.04],
@@ -287,6 +299,7 @@ export function createVisuals(view: HTMLElement) {
       const hub = addMesh(new THREE.CylinderGeometry(0.12, 0.12, 0.315, 16), carbon, wheel);
       hub.rotation.x = Math.PI / 2;
     }
+  // Loaded GLB affects rendering only; the collider remains in VehiclePhysics.
   const subaru = new THREE.Group();
   body.add(subaru);
   const loader = new GLTFLoader();
@@ -326,10 +339,12 @@ export function createVisuals(view: HTMLElement) {
     },
   );
   // Four gimballed jets: local down = thrust reaction along vehicle up.
+  // Four mounts mirror THRUSTER_X/Z, preserving visual and physical alignment.
   const thrusters = [];
   const jetMounts: { tilt: THREE.Group; fallbackJet: THREE.Group }[] = [];
   for (const x of [-THRUSTER_X, THRUSTER_X])
     for (const z of [-THRUSTER_Z, THRUSTER_Z]) {
+      // Yaw is the deployable mount; tilt rotates the nozzle and its exhaust.
       const yaw = new THREE.Group();
       // Thrusters align with the wheel axle centers; visual jet mounts deploy only in flight.
       yaw.position.set(x, 0.17, z);

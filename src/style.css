@@ -1,4 +1,5 @@
 :root {
+  /* Shared typography and dark canvas backdrop for the whole application. */
   font-family: Inter, system-ui, Arial, sans-serif;
   color: #eaf0fb;
   background: #070b14;
@@ -17,6 +18,7 @@ canvas {
   width: 100vw;
   height: 100vh;
 }
+/* Large 2D training playback placed beside the fixed diagnostic panel. */
 .training-map {
   position: fixed;
   top: 16px;
@@ -30,6 +32,7 @@ canvas {
   z-index: 2;
 }
 .training-map[hidden] { display: none; }
+/* Scrollable control and diagnostics panel, independent of the WebGL viewport. */
 .hud {
   position: fixed;
   top: 20px;
@@ -81,6 +84,7 @@ canvas {
   margin: 10px 0;
   color: #9bdcff;
 }
+/* Reusable two-column button layout for manual and neural controls. */
 .controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -159,6 +163,7 @@ canvas {
   color: #8095ae;
   text-shadow: 0 1px 8px black;
 }
+/* Keep all controls reachable when the browser window is short. */
 @media (max-height: 730px) {
   .hud {
     top: 8px;
@@ -177,6 +182,7 @@ canvas {
     margin-top: 5px;
   }
 }
+/* On narrow screens, place the map behind the scrolling HUD. */
 @media (max-width: 600px) {
   .training-map {
     top: 8px;

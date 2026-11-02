@@ -1,6 +1,8 @@
 import type { FlightFrame, FlightReplay } from "./trainer";
 
+/** World-space coordinates accepted without depending on Three.js at draw time. */
 type Point = { x: number; y: number; z: number };
+/** Completed trajectories and camera-independent geometry needed by the map. */
 type MapState = {
   replays: FlightReplay[];
   generation: number;
@@ -13,7 +15,9 @@ type MapState = {
   landing: Point;
 };
 
+/** Replay samples per simulated second: one frame per four 120 Hz physics steps. */
 const FRAME_RATE = 1 / (4 / 120);
+/** Outcome colors assigned from final metrics, not from an instantaneous state. */
 const COLORS = {
   landed: "#67e8a5",
   ramp: "#57d5ff",
@@ -21,6 +25,7 @@ const COLORS = {
   missed: "#f27780",
 };
 
+/** Classify one nominal flight for the visual legend. */
 function color(replay: FlightReplay) {
   const metrics = replay.metrics;
   if (
@@ -39,6 +44,7 @@ function color(replay: FlightReplay) {
   return COLORS.missed;
 }
 
+/** Draw a small orientation-aware car glyph, highlighting upside-down posture. */
 function drawCar(
   ctx: CanvasRenderingContext2D,
   x: number,
@@ -62,6 +68,7 @@ function drawCar(
   ctx.restore();
 }
 
+/** Draw progress or a synchronized 2D playback of all nominal generation flights. */
 export function drawTrainingMap(canvas: HTMLCanvasElement, state: MapState) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
@@ -69,6 +76,7 @@ export function drawTrainingMap(canvas: HTMLCanvasElement, state: MapState) {
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = "#071421";
   ctx.fillRect(0, 0, w, h);
+  // Fixed canvas margins define side-view and top-view projection bounds.
   const left = 58;
   const right = w - 24;
   const sideTop = 100;
@@ -77,6 +85,7 @@ export function drawTrainingMap(canvas: HTMLCanvasElement, state: MapState) {
   const topBottom = h - 39;
   const xMin = -39;
   const xMax = 25;
+  // These closures map meters in each world axis to pixels in the two panels.
   const sideX = (x: number) => left + ((x - xMin) / (xMax - xMin)) * (right - left);
   const sideY = (y: number) => sideBottom - ((y + 3) / 49) * (sideBottom - sideTop);
   const topZ = (z: number) => (topTop + topBottom) / 2 - (z / 18) * (topBottom - topTop);
@@ -166,6 +175,7 @@ export function drawTrainingMap(canvas: HTMLCanvasElement, state: MapState) {
   }
 
   if (state.displaying) {
+    // Counts use completed outcomes; position uses the synchronized replay clock.
     let ramp = 0,
       ground = 0,
       stable = 0;
@@ -178,6 +188,7 @@ export function drawTrainingMap(canvas: HTMLCanvasElement, state: MapState) {
       const position = Math.min(frames.length - 1, Math.floor(state.seconds * FRAME_RATE));
       const car: FlightFrame = frames[position];
       if (!car) continue;
+      // Draw only a short recent tail to keep 96 overlapping paths readable.
       const firstTail = Math.max(0, position - 42);
       ctx.beginPath();
       for (let i = firstTail; i <= position; i += 3) {

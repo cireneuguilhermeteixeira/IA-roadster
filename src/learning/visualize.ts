@@ -1,11 +1,13 @@
 import type { Trace } from "./network";
 import type { GenerationRecord } from "./genetics";
+/** Obtain a 2D context after removing the previous chart frame. */
 function clear(canvas: HTMLCanvasElement) {
   const ctx = canvas.getContext("2d");
   if (!ctx) return null;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   return ctx;
 }
+/** Render the latest individual's neuron activations and network topology. */
 export function drawNetwork(canvas: HTMLCanvasElement, trace: Trace) {
   const ctx = clear(canvas);
   if (!ctx) return;
@@ -40,6 +42,7 @@ export function drawNetwork(canvas: HTMLCanvasElement, trace: Trace) {
     });
   });
 }
+/** Plot current-generation best and mean fitness on an autoscaled axis. */
 export function drawHistory(canvas: HTMLCanvasElement, history: GenerationRecord[]) {
   const ctx = clear(canvas);
   if (!ctx) return;
@@ -51,6 +54,7 @@ export function drawHistory(canvas: HTMLCanvasElement, history: GenerationRecord
     ctx.fillText("Aguardando primeira geração...", 12, h / 2);
     return;
   }
+  // Both curves share one vertical scale derived from the visible history.
   const values = history.flatMap((e) => [e.best, e.mean]);
   const lo = Math.min(...values),
     hi = Math.max(...values);
@@ -74,6 +78,7 @@ export function drawHistory(canvas: HTMLCanvasElement, history: GenerationRecord
   ctx.fillText(`G ${history.at(-1)?.generation} · melhor (azul) · média (laranja)`, 8, 12);
 }
 
+/** Plot nominal-flight contact rates and average upright orientation. */
 export function drawQuality(canvas: HTMLCanvasElement, history: GenerationRecord[]) {
   const ctx = clear(canvas);
   if (!ctx) return;
@@ -98,6 +103,7 @@ export function drawQuality(canvas: HTMLCanvasElement, history: GenerationRecord
     ctx.fillText("Aguardando métricas da primeira geração...", left + 8, height / 2);
     return;
   }
+  // Ramp, near-target, and controlled rates all use the full population denominator.
   const lines = [
     ["rampRate", "#64dbf4"],
     ["nearRate", "#eab57c"],
@@ -118,6 +124,7 @@ export function drawQuality(canvas: HTMLCanvasElement, history: GenerationRecord
   ctx.strokeStyle = "#c4a0f4";
   ctx.lineWidth = 2;
   ctx.beginPath();
+  // Convert the mean up-axis dot product from [-1, 1] to the chart's [0, 1].
   let hasOrientation = false;
   records.forEach((record, index) => {
     const upright = record.diagnostics!.meanFlightUpright;

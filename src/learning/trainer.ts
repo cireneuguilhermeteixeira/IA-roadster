@@ -29,17 +29,23 @@ import {
 } from "./genetics";
 import { isLandingContact, neuralFlightInputs, releaseHeading } from "./flight";
 
+/** Flight and post-contact time limits, measured in simulated seconds. */
 const MAX_SECONDS = 8;
 const POST_CONTACT_SECONDS = 1.5;
+/** Yield the main thread after a short batch even when more physics work remains. */
 const TRAINING_BATCH_MS = 10;
 const MAX_STEPS_PER_BATCH = 512;
+/** Number of checkpoint-derived variants inserted when training resumes. */
 const RESUME_MUTANTS = Math.floor(POPULATION / 4);
+/** Target and speed thresholds used by the diagnostics and stable-landing test. */
 const TARGET_RADIUS = 5;
 const GENTLE_VERTICAL_SPEED = 3;
 const GENTLE_HORIZONTAL_SPEED = 4;
+/** Reject checkpoints with missing, extra, or non-finite neural parameters. */
 function validGenome(genome: Genome | undefined): genome is Genome {
   return genome?.length === WEIGHT_COUNT && genome.every(Number.isFinite);
 }
+/** Rebuild a fresh population around saved fitness and braking champions. */
 function seedPopulation(seed: Genome, alternate?: Genome): Genome[] {
   const genomes = Array.from({ length: POPULATION }, () => randomGenome());
   genomes[0] = seed.slice();
@@ -57,11 +63,13 @@ function seedPopulation(seed: Genome, alternate?: Genome): Genome[] {
   }
   return genomes;
 }
+/** Migrate old sensor layouts only when a checkpoint predates that change. */
 function previousGenome(checkpoint: Checkpoint): Genome {
   return checkpoint.scoreVersion === undefined || checkpoint.scoreVersion < 12
     ? migrateLegacyBiasSensor(checkpoint.champion)
     : checkpoint.champion.slice();
 }
+/** Give the training physics motor state without creating scene geometry. */
 function dummyThrusters(): ThrusterVisual[] {
   return [-THRUSTER_X, THRUSTER_X].flatMap((x) =>
     [-THRUSTER_Z, THRUSTER_Z].map((z) => ({
@@ -75,70 +83,130 @@ function dummyThrusters(): ThrusterVisual[] {
     })),
   );
 }
+/** Downsampled nominal-flight state used only by the two-dimensional replay. */
 export type FlightFrame = { x: number; y: number; z: number; angle: number; upright: number };
+/** One individual's nominal trajectory and its final diagnostic metrics. */
 export type FlightReplay = { index: number; frames: FlightFrame[]; metrics: EpisodeMetrics };
+/** Four 120 Hz physics steps produce one 30 Hz replay sample. */
 const REPLAY_SAMPLE_STEPS = 4;
+/** Evaluates genomes in an isolated Rapier world and evolves each generation. */
 export class EvolutionTrainer {
+  /** Reusable training world and its four non-rendered motor state objects. */
   readonly physics: VehiclePhysics;
   private readonly thrusters: ThrusterVisual[];
+  /** Recent generation summaries shown by the fitness and landing charts. */
   readonly history: GenerationRecord[] = [];
+  /** Number of the generation currently being evaluated or prepared. */
   generation = 1;
+  /** Zero-based index of the genome currently being evaluated. */
   index = 0;
+  /** Whether new simulation batches should keep being scheduled. */
   running = false;
+  /** Seed drives up the ramp once; episode evaluates individual genomes. */
   phase: "seed" | "episode" | "stopped" = "seed";
+  /** Best overall two-flight fitness observed so far. */
   bestFitness = -Infinity;
+  /** DNA associated with bestFitness. */
   champion: Genome | null = null;
+  /** Best separate braking score observed so far. */
   bestBrakingScore = -Infinity;
+  /** DNA associated with bestBrakingScore. */
   brakingChampion: Genome | null = null;
+  /** Generations since either archived score last improved. */
   stagnantGenerations = 0;
+  /** Most recently evaluated network activations, drawn in the HUD. */
   currentTrace: Trace | null = null;
+  /** Simulated seconds elapsed in the current flight. */
   episodeSeconds = 0;
+  /** Total nominal and perturbed episodes evaluated in this browser run. */
   episodes = 0;
+  /** Simulated time processed per wall-clock second while evaluating. */
   simulationSpeed = 0;
+  /** Nominal trajectories held only until the current generation replay ends. */
   readonly replays: FlightReplay[] = [];
+  /** Number of the generation whose trajectories are being displayed. */
   displayGeneration = 0;
+  /** Whether training is paused for synchronized replay. */
   displaying = false;
+  /** Wall-clock start timestamp of the current playback. */
   private displayStart = 0;
+  /** Samples accumulated for one nominal flight. */
   private episodeFrames: FlightFrame[] = [];
+  /** Physics steps since this episode started, used for replay downsampling. */
   private episodeSteps = 0;
+  /** Heading captured at release; the controller tries to preserve it upright. */
   private desiredHeading = new THREE.Vector3(-1, 0, 0);
+  /** Scheduled timer ID, cleared when the user pauses training. */
   private workTimer: number | null = null;
+  /** Beginning of the current simulated-speed measurement window. */
   private speedSampleStart = 0;
+  /** Number of Rapier steps executed inside that measurement window. */
   private speedSampleSteps = 0;
+  /** Car state recorded once at the ramp exit. */
   private savedSeed: State | null = null;
+  /** Fixed nominal and perturbed releases tested for every DNA. */
   private scenarios: State[] = [];
+  /** Which of the two starting states is currently being evaluated. */
   private scenarioIndex = 0;
+  /** Sum of the current DNA's episode fitness values. */
   private scenarioFitness = 0;
+  /** Sum of the current DNA's episode braking scores. */
   private scenarioBrakingScore = 0;
+  /** Nominal-flight diagnostics shown in the generation HUD and replay. */
   private nominalMetrics: EpisodeMetrics | null = null;
+  /** Whether the nominal flight had any valid low-altitude contact. */
   private nominalSuccess = false;
+  /** Neural parameters awaiting evaluation and scored individuals in this generation. */
   private genomes: Genome[] = Array.from({ length: POPULATION }, () => randomGenome());
   private results: Individual[] = [];
+  /** Integrated angular speed, later expressed as equivalent full turns. */
   private rotationRadians = 0;
+  /** First low-altitude ground or ramp impact, captured only once per episode. */
   private firstContact: Omit<EpisodeMetrics, "turns" | "contacted"> | null = null;
+  /** Simulated timestamp of that first impact. */
   private contactAt = 0;
+  /** Cumulative power of each of the four thrusters before impact. */
   private powerSums = [0, 0, 0, 0];
+  /** Cumulative max-minus-min motor power across flight samples. */
   private powerSpreadSum = 0;
+  /** Cumulative nozzle-angle magnitude across motors and samples. */
   private nozzleTiltSum = 0;
+  /** Cumulative up-axis alignment during flight. */
   private flightUprightSum = 0;
+  /** Cumulative bounded descent-quality signal during flight. */
   private controlledDescentSum = 0;
+  /** Count of pre-contact samples used for motor and flight averages. */
   private flightSamples = 0;
+  /** Total approach quality near the target and its sample count. */
   private approachQualitySum = 0;
   private approachSamples = 0;
+  /** Seconds spent nearly hovering near the ground instead of descending. */
   private nearGroundHoverSeconds = 0;
+  /** Sum and minimum of upright alignment after impact. */
   private postContactUprightSum = 0;
   private postContactMinUpright = 1;
+  /** Sum of front-direction alignment after impact. */
   private postContactFacingSum = 0;
+  /** Cumulative horizontal drift speed after impact. */
   private postContactHorizontalSpeedSum = 0;
+  /** Cumulative angular speed after impact. */
   private postContactAngularSpeedSum = 0;
+  /** Cumulative mean power across four motors after impact. */
   private postContactMotorPowerSum = 0;
+  /** Number of post-impact samples in contact with the ramp. */
   private postContactRampSamples = 0;
+  /** Total post-impact samples, used as the mean denominator. */
   private postContactSamples = 0;
+  /**
+   * Create an isolated Rapier world and restore a compatible local checkpoint.
+   * The ramp mesh and track lookup describe the same road used by the manual car;
+   * `landing` is the world-space target, while the body and motor state are private.
+   */
   constructor(
     ramp: THREE.Mesh,
     trackAt: (distance: number) => { point: THREE.Vector3; angle: number },
     trackLength: number,
-    private landing: THREE.Vector3,
+    private landing: THREE.Vector3, // World-space center of the intended landing area.
   ) {
     this.thrusters = dummyThrusters();
     this.physics = new VehiclePhysics(ramp, trackAt, trackLength, this.thrusters, true);
@@ -164,6 +232,7 @@ export class EvolutionTrainer {
       }
     }
   }
+  /** Resume bounded simulation batches or restart a paused replay clock. */
   start() {
     if (this.running) return;
     this.running = true;
@@ -172,12 +241,14 @@ export class EvolutionTrainer {
     this.speedSampleSteps = 0;
     this.scheduleWork();
   }
+  /** Stop scheduling work without discarding the current generation. */
   pause() {
     this.running = false;
     if (this.workTimer !== null) clearTimeout(this.workTimer);
     this.workTimer = null;
     this.simulationSpeed = 0;
   }
+  /** Schedule the next batch; use a slower timer while replaying recorded flights. */
   private scheduleWork() {
     this.workTimer = window.setTimeout(
       () => {
@@ -189,12 +260,17 @@ export class EvolutionTrainer {
       this.displaying ? 16 : 0,
     );
   }
+  /** Fraction of genomes completed in the current generation. */
   get progress() {
     return this.index / POPULATION;
   }
+  /** Real elapsed playback time, capped at the flight recording window. */
   get displaySeconds() {
-    return this.displaying ? Math.min(MAX_SECONDS, (performance.now() - this.displayStart) / 1000) : 0;
+    return this.displaying
+      ? Math.min(MAX_SECONDS, (performance.now() - this.displayStart) / 1000)
+      : 0;
   }
+  /** Store position and orientation for the nominal flight's 2D replay. */
   private recordFrame(state: State) {
     const forward = new THREE.Vector3(1, 0, 0).applyQuaternion(state.rotation);
     this.episodeFrames.push({
@@ -205,6 +281,7 @@ export class EvolutionTrainer {
       upright: new THREE.Vector3(0, 1, 0).applyQuaternion(state.rotation).y,
     });
   }
+  /** Reset the same Rapier body to the next nominal or perturbed release state. */
   private startEpisode() {
     if (!this.savedSeed) return;
     if (!this.scenarios.length) {
@@ -251,6 +328,7 @@ export class EvolutionTrainer {
   /** Use spare main-thread time in bounded batches so rendering and input can still run. */
   private tick() {
     if (!this.running) return;
+    // Playback uses saved physics samples; no new training steps run during it.
     if (this.displaying) {
       if (this.displaySeconds < MAX_SECONDS) return;
       this.displaying = false;
@@ -266,6 +344,7 @@ export class EvolutionTrainer {
       (steps === 0 || performance.now() - batchStart < TRAINING_BATCH_MS)
     ) {
       steps++;
+      // Run the ramp once to obtain the common flight-release state.
       if (this.phase === "seed") {
         this.physics.step(FIXED_DT);
         if (this.physics.flying) {
@@ -277,6 +356,7 @@ export class EvolutionTrainer {
         continue;
       }
       if (this.phase !== "episode") return;
+      // Closed feedback loop: observe Rapier, query this DNA, then step Rapier.
       const state = this.physics.snapshot();
       const genome = this.genomes[this.index];
       const { controls, trace } = neuralFlightInputs(
@@ -295,6 +375,7 @@ export class EvolutionTrainer {
       if (this.scenarioIndex === 0 && ++this.episodeSteps % REPLAY_SAMPLE_STEPS === 0)
         this.recordFrame(finalState);
       const surface = this.physics.contactSurface();
+      // Approach and motor statistics are sampled only before the first valid contact.
       if (!this.firstContact) {
         const powers = this.thrusters.map((thruster, index) => {
           this.powerSums[index] += thruster.power;
@@ -351,6 +432,7 @@ export class EvolutionTrainer {
           };
         }
       }
+      // Continue observing after contact to distinguish a landing from a bounce.
       if (this.firstContact) {
         const postContactUpright = new THREE.Vector3(0, 1, 0).applyQuaternion(
           finalState.rotation,
@@ -376,6 +458,7 @@ export class EvolutionTrainer {
       ) {
         const success = this.firstContact !== null;
         const finalForward = new THREE.Vector3(1, 0, 0).applyQuaternion(finalState.rotation);
+        // Snapshot both impact and settled behavior before reusing the rigid body.
         const metrics: EpisodeMetrics = {
           surface: this.firstContact?.surface ?? null,
           distance: this.firstContact?.distance ?? null,
@@ -426,6 +509,7 @@ export class EvolutionTrainer {
           this.nominalMetrics = metrics;
           this.nominalSuccess = success;
         }
+        // One genome's fitness is the mean of its nominal and perturbed flights.
         if (++this.scenarioIndex === this.scenarios.length) {
           this.results.push({
             genome: genome.slice(),
@@ -453,9 +537,15 @@ export class EvolutionTrainer {
       this.speedSampleSteps = 0;
     }
   }
+  /**
+   * Reward approach, safe impact, and remaining settled on the target ramp.
+   * `state` is the episode's final Rapier snapshot; `metrics` combines first
+   * contact, flight averages, and post-contact observations.
+   */
   private fitness(state: State, metrics: EpisodeMetrics) {
     const aligned = (value: number | null | undefined) =>
       THREE.MathUtils.clamp(((value ?? -1) + 1) / 2, 0, 1);
+    // Hovering and accumulated turns are negative even if the eventual impact is good.
     const approach =
       900 * (metrics.approachQuality ?? 0) -
       500 * (metrics.nearGroundHoverSeconds ?? 0) -
@@ -468,6 +558,7 @@ export class EvolutionTrainer {
       return approach + 300 * Math.exp(-distance / 10) - 1500;
     }
 
+    // These terms use the measured state immediately before the first low contact.
     const impact =
       700 * Math.exp(-(metrics.distance ?? 100) / TARGET_RADIUS) +
       1700 *
@@ -481,6 +572,7 @@ export class EvolutionTrainer {
     // A ramp touch that becomes a takeoff is a failed landing.
     if (metrics.finalSurface !== "ramp") return approach + impact - 3000;
 
+    // These terms use the final state and averages over the post-contact interval.
     const settled =
       700 * Math.exp(-(metrics.finalDistance ?? 100) / TARGET_RADIUS) +
       700 * aligned(metrics.finalUpright) +
@@ -494,6 +586,7 @@ export class EvolutionTrainer {
     const score = approach + impact + settled + (this.stableRampLanding(metrics) ? 2000 : 0);
     return Number.isFinite(score) ? score : -1e6;
   }
+  /** Apply the strict terminal and post-contact thresholds for a stable landing. */
   private stableRampLanding(metrics: EpisodeMetrics) {
     return (
       metrics.surface === "ramp" &&
@@ -512,6 +605,7 @@ export class EvolutionTrainer {
       (metrics.postContactRampFraction ?? 0) >= 0.8
     );
   }
+  /** Summarize the population, retain champions, breed, and save a checkpoint. */
   private nextGeneration() {
     this.displayGeneration = this.generation;
     this.displaying = true;
@@ -524,6 +618,7 @@ export class EvolutionTrainer {
     const groundContacts = this.results.filter((r) => r.metrics.surface === "ground");
     const rampContacts = this.results.filter((r) => r.metrics.surface === "ramp");
     const near = rampContacts.filter((r) => r.metrics.distance! <= TARGET_RADIUS);
+    // Controlled landings satisfy impact limits as well as the settled test.
     const controlled = near.filter(
       (r) =>
         r.metrics.verticalSpeed! <= GENTLE_VERTICAL_SPEED &&
@@ -541,6 +636,7 @@ export class EvolutionTrainer {
       values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null;
     const nearRate = (predicate: (metrics: EpisodeMetrics) => boolean) =>
       near.length ? near.filter((r) => predicate(r.metrics)).length / near.length : null;
+    // Fitness and braking have separate champion archives and stagnation checks.
     const fitnessImproved = best.fitness > this.bestFitness || !this.champion;
     const brakingImproved = bestBraking.brakingScore > this.bestBrakingScore;
     if (fitnessImproved) {
@@ -601,6 +697,7 @@ export class EvolutionTrainer {
     this.results = [];
     if (this.champion) saveCheckpoint(this.checkpoint());
   }
+  /** Serialize only champions and recent history, not all 96 genomes or replays. */
   checkpoint(): Checkpoint {
     if (!this.champion) throw new Error("No champion has been trained yet");
     return {
@@ -616,6 +713,7 @@ export class EvolutionTrainer {
       history: this.history.slice(),
     };
   }
+  /** Download the current checkpoint as a user-portable JSON file. */
   exportJSON() {
     const document = JSON.stringify(this.checkpoint(), null, 2);
     const url = URL.createObjectURL(new Blob([document], { type: "application/json" }));
@@ -625,6 +723,7 @@ export class EvolutionTrainer {
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  /** Validate imported DNA and restart evaluation under the current score version. */
   importJSON(raw: string) {
     const value = JSON.parse(raw) as Checkpoint;
     if (

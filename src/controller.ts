@@ -1,11 +1,19 @@
 import * as THREE from "three";
 import { MASS, MAX_THRUST, type State, type FlightInputs } from "./physics";
 
+/** Converts keyboard input or assisted landing targets into physics commands. */
 export class FlightController {
+  /** Desired upright pose with the front pointing opposite the ramp exit. */
   private readonly target = new THREE.Quaternion().setFromAxisAngle(
     new THREE.Vector3(0, 1, 0),
     Math.PI,
   );
+  /**
+   * Compute this step's thrust direction, power, and attitude torque.
+   * `state` is the current Rapier snapshot, `keys` contains held controls, `auto`
+   * selects assisted stabilization, `throttle` caps each motor, and `landing` is
+   * the world-space target point.
+   */
   command(
     state: State,
     keys: Record<string, boolean>,
@@ -23,6 +31,7 @@ export class FlightController {
         lateral: 0,
       };
     }
+    // Paired keys produce -1, 0, or +1 on each control axis.
     const axis = (plus: string, minus: string) =>
       Number(Boolean(keys[plus])) - Number(Boolean(keys[minus]));
     const torque = new THREE.Vector3(
@@ -32,6 +41,7 @@ export class FlightController {
     );
     let base = powerLimit;
     if (auto) {
+      // Compare current and target orientations in the car's local frame.
       const inverseRotation = state.rotation.clone().invert();
       const error = inverseRotation.clone().multiply(this.target);
       if (error.w < 0) error.set(-error.x, -error.y, -error.z, -error.w);
@@ -52,6 +62,7 @@ export class FlightController {
         -5,
         6,
       );
+      // Position error and velocity determine the requested world-space force.
       const desired = new THREE.Vector3(
         THREE.MathUtils.clamp((landing.x - state.position.x) * 1.2 - state.velocity.x * 2.2, -8, 8),
         9.81 + verticalAcceleration,

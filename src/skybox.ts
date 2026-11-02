@@ -1,6 +1,6 @@
 import * as THREE from "three";
 
-// One seamless equirectangular image covering the entire environment (2:1).
+/** Install the equirectangular panorama as a background and reflection source. */
 export function setupSkybox(scene: THREE.Scene): void {
   const texture = new THREE.TextureLoader().load(
     "/textures/sunset-panorama.svg",

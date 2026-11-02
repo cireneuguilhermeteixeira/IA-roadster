@@ -1,9 +1,11 @@
 import * as THREE from "three";
 
-// Smaller play area with intentionally sparse, larger vegetation meshes.
+/** Add lightweight scenery with deterministic placement around the landing lane. */
 export function createCaatinga(scene: THREE.Scene): void {
+  // A fixed seed keeps tree and rock locations stable across page reloads.
   let seed = 20261020;
   const random = () => (seed = (1664525 * seed + 1013904223) >>> 0) / 4294967296;
+  // Shared materials avoid creating a new GPU material for every plant.
   const materials = [
     new THREE.MeshStandardMaterial({ color: 0x456d3d, roughness: 1, flatShading: true }),
     new THREE.MeshStandardMaterial({ color: 0x70874d, roughness: 1, flatShading: true }),
@@ -15,6 +17,7 @@ export function createCaatinga(scene: THREE.Scene): void {
   scene.add(environment);
 
   // At most ~two meshes per tree; silhouette detail is provided by the panorama.
+  /** Build one broad-canopy tree from a stem and a low-poly crown. */
   function vegetation1(height: number, material: THREE.Material): THREE.Group {
     const root = new THREE.Group();
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.25, height * 0.74, 6), wood);
@@ -26,6 +29,7 @@ export function createCaatinga(scene: THREE.Scene): void {
     root.add(canopy);
     return root;
   }
+  /** Build a cactus-like plant with two angled arms. */
   function vegetation2(height: number): THREE.Group {
     const root = new THREE.Group();
     const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.24, height, 7), materials[0]);
@@ -42,6 +46,7 @@ export function createCaatinga(scene: THREE.Scene): void {
     }
     return root;
   }
+  /** Build a conical tree from a trunk and sparse crown geometry. */
   function vegetation3(height: number, material: THREE.Material): THREE.Group {
     const root = new THREE.Group();
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.2, height * 0.78, 6), wood);
@@ -58,6 +63,7 @@ export function createCaatinga(scene: THREE.Scene): void {
 
   // Clusters close to the ramp, not hundreds of objects scattered to the horizon.
   // Fixed positions avoid blocking the ramp and keep the landing lane open.
+  // Cluster centers leave the active ramp and landing area unobstructed.
   const clusters = [
     [-35, -20],
     [-23, -23],
@@ -101,6 +107,7 @@ export function createCaatinga(scene: THREE.Scene): void {
       environment.add(plant);
     }
   }
+  // Stones reuse one geometry and material, changing only their transforms.
   const stoneGeometry = new THREE.DodecahedronGeometry(0.65, 0);
   for (let i = 0; i < 24; i++) {
     const x = (random() - 0.5) * 150;

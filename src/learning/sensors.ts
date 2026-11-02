@@ -1,9 +1,13 @@
 import * as THREE from "three";
 import type { State } from "../physics";
 
+/** Normalize a physical quantity into the network's bounded input interval. */
 const clamp = (n: number, scale: number) => THREE.MathUtils.clamp(n / scale, -1, 1);
-/** All state variables in the vehicle frame or relative to the landing site.
- * Swapping maps does not require modifying this schema.
+/**
+ * Encode one live Rapier snapshot as 18 bounded network inputs.
+ * `landing` and `heading` define the target; `elapsed` is simulated flight time;
+ * `touchingSurface` flags valid low-altitude contact. Motion vectors are expressed
+ * in the car frame so the same schema works across different world orientations.
  */
 export function encodeSensors(
   state: State,
@@ -12,6 +16,7 @@ export function encodeSensors(
   touchingSurface: boolean,
   heading = new THREE.Vector3(-1, 0, 0),
 ): number[] {
+  // Express target, motion, world-up, and desired heading in the car's frame.
   const qInv = state.rotation.clone().invert();
   const delta = landing.clone().sub(state.position).applyQuaternion(qInv);
   const localVelocity = state.velocity.clone().applyQuaternion(qInv);
@@ -39,6 +44,7 @@ export function encodeSensors(
     Number(touchingSurface),
   ];
 }
+/** Human-readable labels in exactly the same order as the 18 sensor values. */
 export const SENSOR_LABELS = [
   "target local X",
   "target local Y",

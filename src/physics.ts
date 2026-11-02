@@ -1,62 +1,107 @@
 import * as THREE from "three";
 import RAPIER from "@dimforge/rapier3d-compat";
 
+/** Approximate chassis mass in kilograms. */
 export const MASS = 1450;
+/** Maximum force, in newtons, produced by one fully powered thruster. */
 export const MAX_THRUST = 6000;
+/** Longitudinal and lateral offsets of the four thruster mounting points. */
 export const THRUSTER_X = 1.56;
 export const THRUSTER_Z = 0.7;
+/** Fixed Rapier step in seconds; independent of the display refresh rate. */
 export const FIXED_DT = 1 / 120;
+/** World vertical acceleration in meters per second squared. */
 export const GRAVITY = -9.81;
+/** Position and tangent angle of one point along the ramp centerline. */
 type Waypoint = { point: THREE.Vector3; angle: number };
+/** Shared motor state: mount coordinates, current power, and Three.js visual parts. */
 export type ThrusterVisual = {
+  /** Local X/Z position of the motor relative to the body origin. */
   x: number;
   z: number;
+  /** Current normalized thrust after power-limit and smoothing rules. */
   power: number;
+  /** Nozzle pivot and deployable parent in the visible car or dummy equivalents. */
   tilt: THREE.Group;
   yaw: THREE.Group;
+  /** Flame mesh and light driven by current motor power. */
   exhaust: THREE.Mesh;
   light: THREE.PointLight;
 };
+/** A detached snapshot of the car's position, orientation, and motion. */
 export type State = {
+  /** World-space center of mass and attitude quaternion. */
   position: THREE.Vector3;
   rotation: THREE.Quaternion;
+  /** World-space linear velocity and angular velocity in rad/s. */
   velocity: THREE.Vector3;
   angularVelocity: THREE.Vector3;
 };
+/** Commands accepted by the physics step from manual, automatic, or neural control. */
 export type FlightInputs = {
+  /** Requested body torque and common base power for the hand-coded controller. */
   torque: THREE.Vector3;
   base: number;
+  /** Per-motor power ceiling after the user throttle and landing limiter. */
   powerLimit: number;
+  /** Manual nozzle offsets in the car's forward and lateral directions. */
   forward: number;
   lateral: number;
+  /** Optional world-space force direction used by automatic stabilization. */
   thrustDirection?: THREE.Vector3;
+  /** Optional per-motor neural power and nozzle angles, overriding base control. */
   jets?: { power: number; tiltX: number; tiltZ: number }[];
+  /** Cut neural thrust on a low-altitude collider contact. */
   cutOnContact?: boolean;
   touchdownCeiling?: number;
 };
+/** Convert a Three.js vector into the plain coordinate object expected by Rapier. */
 const asVector = (v: THREE.Vector3) => ({ x: v.x, y: v.y, z: v.z });
 
+/** Owns one independent Rapier world and applies the ramp and flight forces. */
 export class VehiclePhysics {
+  /** Rapier simulation, separate from any other VehiclePhysics instance. */
   readonly world: RAPIER.World;
+  /** Dynamic rigid body whose state drives the visible car or a training episode. */
   readonly body: RAPIER.RigidBody;
+  /** Static ground plane used for both support and ground-contact detection. */
   private readonly groundCollider: RAPIER.Collider;
+  /** Static triangle mesh copied from the rendered ramp surface. */
   private readonly rampCollider: RAPIER.Collider;
+  /** Rounded underbody collider attached to the dynamic car. */
   private readonly chassisCollider: RAPIER.Collider;
+  /** Four motor mounts; training uses lightweight stand-ins for their visuals. */
   private readonly thrusters: ThrusterVisual[];
+  /** Returns the geometric centerline point and tangent at a traveled distance. */
   private readonly trackAt: (distance: number) => Waypoint;
+  /** Maximum distance accepted by trackAt before the upper exit. */
   private readonly trackLength: number;
+  /** Monotonic distance reached along the ramp centerline. */
   private along = 0;
+  /** True after the car reaches the upper exit and stops using the ramp guide. */
   private released = false;
+  /** True once contact remains quiet long enough to declare a landing. */
   private landed = false;
+  /** Consecutive contact time below the landing speed and spin thresholds. */
   private stableContactSeconds = 0;
+  /** Latches the neural engine cutoff after a valid low-altitude contact. */
   private neuralEnginesCut = false;
+  /** Force ceiling of the ramp drive motor, not of the four flight thrusters. */
   private readonly motorForce = 60000;
+  /**
+   * Build static surfaces and a dynamic chassis from the rendered ramp.
+   * @param ramp Indexed Three.js deck mesh whose triangles become the Rapier ramp collider.
+   * @param trackAt Centerline lookup used by the assisted ramp drive.
+   * @param trackLength Total centerline distance to the upper exit.
+   * @param thrusters Four motor mounts; dummy visual objects are sufficient during training.
+   * @param reactorsEnabled Physical switch that can disable all flight thrust.
+   */
   constructor(
     ramp: THREE.Mesh,
     trackAt: (distance: number) => Waypoint,
     trackLength: number,
     thrusters: ThrusterVisual[],
-    private readonly reactorsEnabled = true,
+    private readonly reactorsEnabled = true, // Physical on/off switch for flight forces.
   ) {
     this.world = new RAPIER.World({ x: 0, y: GRAVITY, z: 0 });
     this.world.timestep = FIXED_DT;
@@ -64,6 +109,7 @@ export class VehiclePhysics {
       RAPIER.ColliderDesc.cuboid(115, 0.15, 115).setTranslation(0, -0.15, 0).setFriction(0.9),
     );
     // Reuse the *rendered* ramp triangle mesh as the actual physics collision surface.
+    // The indexed visual ribbon supplies the vertices and faces of the ramp collider.
     const geom = ramp.geometry as THREE.BufferGeometry;
     const coords = geom.getAttribute("position").array as Float32Array;
     const idx = geom.getIndex()!.array;
@@ -75,6 +121,7 @@ export class VehiclePhysics {
     this.trackAt = trackAt;
     this.trackLength = trackLength;
     this.thrusters = thrusters;
+    // The body starts just above the road; damping and CCD stabilize fast contacts.
     const start = trackAt(0).point;
     const desc = RAPIER.RigidBodyDesc.dynamic()
       .setTranslation(start.x, start.y + 0.31, start.z)
@@ -88,7 +135,7 @@ export class VehiclePhysics {
         { x: 0, y: 0, z: 0, w: 1 },
       );
     this.body = this.world.createRigidBody(desc);
-    // One rounded underbody avoids the impulses caused by rigid, non-rolling tire spheres.
+    // The visual wheels have no individual colliders or suspension joints.
     this.chassisCollider = this.world.createCollider(
       RAPIER.ColliderDesc.roundCuboid(2.12, 0.18, 1.04, 0.12)
         .setDensity(0)
@@ -97,6 +144,7 @@ export class VehiclePhysics {
       this.body,
     );
   }
+  /** Return this world and all motor state to the beginning of the ramp. */
   reset() {
     this.released = false;
     this.landed = false;
@@ -116,6 +164,7 @@ export class VehiclePhysics {
       t.tilt.rotation.set(0, 0, 0);
     }
   }
+  /** Reuse the same rigid body for another flight, copying its starting transform and velocities. */
   primeFlight(state: State) {
     this.released = true;
     this.landed = false;
@@ -136,12 +185,15 @@ export class VehiclePhysics {
       t.yaw.visible = true;
     }
   }
+  /** Whether the car has reached the ramp exit. */
   get flying() {
     return this.released;
   }
+  /** Whether low motion has persisted through a stable contact. */
   get grounded() {
     return this.landed;
   }
+  /** Read Rapier contact manifolds; prefer the ramp when both surfaces touch. */
   contactSurface(): "ground" | "ramp" | null {
     const touching = (surface: RAPIER.Collider) => {
       let contact = false;
@@ -154,6 +206,7 @@ export class VehiclePhysics {
     if (touching(this.groundCollider)) return "ground";
     return null;
   }
+  /** Remove motor power and hide the corresponding exhaust effects. */
   private disableThrusters() {
     for (const t of this.thrusters) {
       t.power = 0;
@@ -161,6 +214,7 @@ export class VehiclePhysics {
       t.light.intensity = 0;
     }
   }
+  /** Copy the current Rapier transform and velocities for controllers and scoring. */
   snapshot(): State {
     const p = this.body.translation(),
       r = this.body.rotation(),
@@ -173,9 +227,11 @@ export class VehiclePhysics {
       angularVelocity: new THREE.Vector3(w.x, w.y, w.z),
     };
   }
+  /** Apply a world-space force at a world-space point, producing torque as needed. */
   private applyAt(force: THREE.Vector3, point: THREE.Vector3) {
     this.body.addForceAtPoint(asVector(force), asVector(point), true);
   }
+  /** Drive along the ramp while guiding the body toward its centerline and angle. */
   private trackDrive() {
     const state = this.snapshot();
     const exit = this.trackAt(this.trackLength).point;
@@ -186,6 +242,7 @@ export class VehiclePhysics {
       return;
     }
     // Continuous closest point keeps the guide target from jumping between samples.
+    // Search only near the last progress value so the closest point cannot jump loops.
     let searchA = Math.max(0, this.along - 2);
     let searchB = Math.min(this.trackLength, this.along + 3);
     for (let i = 0; i < 16; i++) {
@@ -202,6 +259,7 @@ export class VehiclePhysics {
       }
     }
     this.along = Math.max(this.along, (searchA + searchB) / 2);
+    // Tangent controls forward speed; normal controls separation from the road.
     const route = this.trackAt(this.along);
     const tangent = new THREE.Vector3(Math.cos(route.angle), Math.sin(route.angle), 0);
     const normal = new THREE.Vector3(-Math.sin(route.angle), Math.cos(route.angle), 0);
@@ -248,6 +306,10 @@ export class VehiclePhysics {
     correction.clampLength(0, 90000);
     this.body.addTorque(asVector(correction), true);
   }
+  /**
+   * Clear old forces, apply this step's control, advance Rapier, and detect landing.
+   * `dt` is simulated seconds, normally FIXED_DT; `input` is absent on the ramp.
+   */
   step(dt: number, input?: FlightInputs) {
     // Rapier keeps user forces and torques until they are explicitly cleared.
     // The ramp guide must stop acting as soon as the vehicle is released.
@@ -279,12 +341,14 @@ export class VehiclePhysics {
       }
     }
   }
+  /** Smooth nozzle and power commands before applying each motor at its mount. */
   private flightForces(dt: number, input: FlightInputs) {
     const powerLimit = THREE.MathUtils.clamp(input.powerLimit, 0, 1);
     if (!this.reactorsEnabled || this.neuralEnginesCut || powerLimit === 0) {
       this.disableThrusters();
       return;
     }
+    // The same body orientation rotates local nozzle directions and mounts into world space.
     const state = this.snapshot(),
       q = state.rotation;
     for (const [index, t] of this.thrusters.entries()) {
