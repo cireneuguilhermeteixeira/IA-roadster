@@ -3,6 +3,8 @@ import RAPIER from "@dimforge/rapier3d-compat";
 
 export const MASS = 1450;
 export const MAX_THRUST = 6000;
+export const THRUSTER_X = 1.56;
+export const THRUSTER_Z = 0.7;
 export const FIXED_DT = 1 / 120;
 export const GRAVITY = -9.81;
 type Waypoint = { point: THREE.Vector3; angle: number };
@@ -28,18 +30,26 @@ export type FlightInputs = {
   forward: number;
   lateral: number;
   thrustDirection?: THREE.Vector3;
+  jets?: { power: number; tiltX: number; tiltZ: number }[];
+  cutOnContact?: boolean;
+  touchdownCeiling?: number;
 };
 const asVector = (v: THREE.Vector3) => ({ x: v.x, y: v.y, z: v.z });
 
 export class VehiclePhysics {
   readonly world: RAPIER.World;
   readonly body: RAPIER.RigidBody;
+  private readonly groundCollider: RAPIER.Collider;
+  private readonly rampCollider: RAPIER.Collider;
+  private readonly chassisCollider: RAPIER.Collider;
   private readonly thrusters: ThrusterVisual[];
   private readonly trackAt: (distance: number) => Waypoint;
   private readonly trackLength: number;
   private along = 0;
   private released = false;
   private landed = false;
+  private stableContactSeconds = 0;
+  private neuralEnginesCut = false;
   private readonly motorForce = 60000;
   constructor(
     ramp: THREE.Mesh,
@@ -50,14 +60,14 @@ export class VehiclePhysics {
   ) {
     this.world = new RAPIER.World({ x: 0, y: GRAVITY, z: 0 });
     this.world.timestep = FIXED_DT;
-    this.world.createCollider(
+    this.groundCollider = this.world.createCollider(
       RAPIER.ColliderDesc.cuboid(115, 0.15, 115).setTranslation(0, -0.15, 0).setFriction(0.9),
     );
     // Reuse the *rendered* ramp triangle mesh as the actual physics collision surface.
     const geom = ramp.geometry as THREE.BufferGeometry;
     const coords = geom.getAttribute("position").array as Float32Array;
     const idx = geom.getIndex()!.array;
-    this.world.createCollider(
+    this.rampCollider = this.world.createCollider(
       RAPIER.ColliderDesc.trimesh(Float32Array.from(coords), Uint32Array.from(idx)).setFriction(
         0.35,
       ),
@@ -79,7 +89,7 @@ export class VehiclePhysics {
       );
     this.body = this.world.createRigidBody(desc);
     // One rounded underbody avoids the impulses caused by rigid, non-rolling tire spheres.
-    this.world.createCollider(
+    this.chassisCollider = this.world.createCollider(
       RAPIER.ColliderDesc.roundCuboid(2.12, 0.18, 1.04, 0.12)
         .setDensity(0)
         .setFriction(0.15)
@@ -90,6 +100,8 @@ export class VehiclePhysics {
   reset() {
     this.released = false;
     this.landed = false;
+    this.stableContactSeconds = 0;
+    this.neuralEnginesCut = false;
     this.along = 0;
     const start = this.trackAt(0).point;
     this.body.setTranslation({ x: start.x, y: start.y + 0.31, z: 0 }, true);
@@ -104,11 +116,43 @@ export class VehiclePhysics {
       t.tilt.rotation.set(0, 0, 0);
     }
   }
+  primeFlight(state: State) {
+    this.released = true;
+    this.landed = false;
+    this.stableContactSeconds = 0;
+    this.neuralEnginesCut = false;
+    this.body.setTranslation(asVector(state.position), true);
+    this.body.setRotation(
+      { x: state.rotation.x, y: state.rotation.y, z: state.rotation.z, w: state.rotation.w },
+      true,
+    );
+    this.body.setLinvel(asVector(state.velocity), true);
+    this.body.setAngvel(asVector(state.angularVelocity), true);
+    this.body.resetForces(true);
+    this.body.resetTorques(true);
+    for (const t of this.thrusters) {
+      t.power = 0;
+      t.tilt.rotation.set(0, 0, 0);
+      t.yaw.visible = true;
+    }
+  }
   get flying() {
     return this.released;
   }
   get grounded() {
     return this.landed;
+  }
+  contactSurface(): "ground" | "ramp" | null {
+    const touching = (surface: RAPIER.Collider) => {
+      let contact = false;
+      this.world.contactPair(this.chassisCollider, surface, (manifold) => {
+        if (manifold.numSolverContacts() > 0) contact = true;
+      });
+      return contact;
+    };
+    if (touching(this.rampCollider)) return "ramp";
+    if (touching(this.groundCollider)) return "ground";
+    return null;
   }
   private disableThrusters() {
     for (const t of this.thrusters) {
@@ -213,10 +257,23 @@ export class VehiclePhysics {
     else if (input && !this.landed) this.flightForces(dt, input);
     this.world.timestep = dt;
     this.world.step();
+    const contact = this.released ? this.contactSurface() : null;
+    const touchdownHeight = this.body.translation().y <= (input?.touchdownCeiling ?? Infinity);
+    if (input?.cutOnContact && contact && touchdownHeight) {
+      this.neuralEnginesCut = true;
+      this.disableThrusters();
+    }
     if (this.released && !this.landed) {
-      const position = this.body.translation();
       const velocity = this.body.linvel();
-      if (position.y <= 0.33 && Math.abs(velocity.y) < 1) {
+      const spin = this.body.angvel();
+      const nearlyStill =
+        Math.hypot(velocity.x, velocity.y, velocity.z) < 0.8 &&
+        Math.hypot(spin.x, spin.y, spin.z) < 0.6;
+      this.stableContactSeconds =
+        nearlyStill && contact && (!input?.cutOnContact || touchdownHeight)
+          ? this.stableContactSeconds + dt
+          : 0;
+      if (this.stableContactSeconds >= 0.4) {
         this.landed = true;
         this.disableThrusters();
       }
@@ -224,14 +281,28 @@ export class VehiclePhysics {
   }
   private flightForces(dt: number, input: FlightInputs) {
     const powerLimit = THREE.MathUtils.clamp(input.powerLimit, 0, 1);
-    if (!this.reactorsEnabled || powerLimit === 0) {
+    if (!this.reactorsEnabled || this.neuralEnginesCut || powerLimit === 0) {
       this.disableThrusters();
       return;
     }
     const state = this.snapshot(),
       q = state.rotation;
-    for (const t of this.thrusters) {
-      if (input.thrustDirection) {
+    for (const [index, t] of this.thrusters.entries()) {
+      const direct = input.jets?.[index];
+      if (direct) {
+        t.tilt.rotation.x = THREE.MathUtils.damp(
+          t.tilt.rotation.x,
+          THREE.MathUtils.clamp(direct.tiltX, -0.65, 0.65),
+          3,
+          dt,
+        );
+        t.tilt.rotation.z = THREE.MathUtils.damp(
+          t.tilt.rotation.z,
+          THREE.MathUtils.clamp(direct.tiltZ, -0.65, 0.65),
+          3,
+          dt,
+        );
+      } else if (input.thrustDirection) {
         const localDirection = input.thrustDirection.clone().applyQuaternion(q.clone().invert());
         const target = new THREE.Quaternion().setFromUnitVectors(
           new THREE.Vector3(0, 1, 0),
@@ -261,9 +332,11 @@ export class VehiclePhysics {
         Math.sign(localDirection.y || 1) * Math.max(0.25, Math.abs(localDirection.y));
       // r × F: roll contribution is -z*Fy; pitch contribution is x*Fy.
       const target = THREE.MathUtils.clamp(
-        input.base * alignment -
-          (input.torque.x * t.z) / (4 * 1.1 * 1.1 * MAX_THRUST * verticalAuthority) +
-          (input.torque.z * t.x) / (4 * 1.76 * 1.76 * MAX_THRUST * verticalAuthority),
+        direct
+          ? direct.power
+          : input.base * alignment -
+              (input.torque.x * t.z) / (4 * THRUSTER_Z ** 2 * MAX_THRUST * verticalAuthority) +
+              (input.torque.z * t.x) / (4 * THRUSTER_X ** 2 * MAX_THRUST * verticalAuthority),
         0,
         powerLimit,
       );
